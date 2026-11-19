@@ -21,17 +21,19 @@ Blocked unless a human adds a sign-off label:
 Enforcement (**to be built**): a script diffs the PR against develop and fails if any changed test file is not owned by the ticket key (or if a blocked path changed without the label). It runs locally in `make verify-suite` and as a required GitHub check.
 
 ## 3. Merge rule
-AI may merge into develop only when **all required checks pass, the scope guard is green, and the branch is up to date with develop**. Anything else stays open for a human. The guard and the checks must exist and be required before AI merge is turned on. Promotion from develop to main is batched.
+Decision (Michael): AI may merge once proper checks and guards are in place. Rule: AI may merge into develop only when **all required checks pass, the scope guard is green, and the branch is up to date with develop**. Anything else stays open for a human. The guard and the checks must exist and be required before AI merge is turned on. Promotion from develop to main is batched.
 
-## 4. Nightly full suite and quarantine
-Michael's requirement, verbatim:
+## 4. Full-suite runs (under discussion)
+Proposal only, not agreed. Michael asked to discuss it.
 
-> A full-suite run each night on develop, locally or on the cheapest GitHub runner. If a test fails there and passes on rerun, it goes into quarantine, a tag that stops it blocking merges while it's fixed. It gets a Jira ticket and has a fix deadline.
->
-> - Promoting to main needs a clean nightly run: zero failures and zero flaky reruns.
+- **Per-ticket runs stay local, then develop,** with the ticket's tests plus the core gate. Develop holds many branches that never get promoted, so a full-suite run there says little about what will ship.
+- **Proposed: run the full suite on stage,** where code that is actually being promoted lives.
+- If a test fails on stage and passes on rerun, it goes into **quarantine**: a tag that stops it blocking merges while it is fixed. It gets a Jira ticket and a fix deadline.
+- Promoting to main would need a clean stage full run: zero failures and zero flaky reruns.
 
 ## 5. Open items
 - Back-to-back count: 3 or 5.
-- Where the nightly runs: local machine or GitHub.
+- Where the full suite runs: stage is proposed (to discuss).
+- When the stage full run happens: on each promotion, nightly, or before a prod release.
 - Fix deadline length for quarantined tests.
 - Who owns the quarantine tickets.
