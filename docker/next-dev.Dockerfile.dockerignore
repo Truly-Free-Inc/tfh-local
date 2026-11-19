@@ -1,0 +1,8 @@
+# Used instead of the app repo's .dockerignore (BuildKit: <Dockerfile>.dockerignore). Some app repos exclude
+# files `next dev` needs (e.g. funnels excludes sentry.*.config.ts, which src/instrumentation.ts imports).
+node_modules
+.next
+.git
+.env
+.env.*
+coverage

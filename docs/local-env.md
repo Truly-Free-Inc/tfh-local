@@ -61,14 +61,22 @@ Gate tag: `@gate` (`npm run test:gate` = `--grep @gate --grep-invert @quarantine
 | Mailpit UI / SMTP | 18025 / 11025 |
 | MinIO API / console | 19000 / 19001 |
 | Klaviyo recorder (`GET /__calls`) | 18090 |
-| memberportal (live) / admin (stub) / funnels (stub) / apigateway (live) / vector (stub) | 13001 / 13002 / 13003 / 13004 / 18077 |
+| memberportal / admin / funnels / apigateway / vector (all live; vector needs `VECTOR=1`) | 13001 / 13002 / 13003 / 13004 / 18077 |
 | Kratos public / admin (live, loopback) | 14433 / 14434 |
 
 ## Known gaps (TODO)
-- tf-api Klaviyo base URL is a hard-coded constant (`constants.KlaviyoAPIBaseURL`); needs an env-override PR before
-  the recorder sees tf-api calls. Until then those calls are denied by the proxy.
-- S3: tf-api uses AWS SDK v2 (honours `AWS_ENDPOINT_URL`); path-style addressing for MinIO not yet confirmed.
-- Mail: tf-api sends via Mailgun HTTP API, not SMTP; Mailpit currently only serves future Kratos/portal SMTP.
+- Klaviyo: tf-api reads `KLAVIYO_API_BASE_URL` only on branch `tfh-local/klaviyo-base-url` (PR to develop, not merged).
+  compose sets it to the recorder (`GET http://localhost:18090/__calls`) with placeholder key/list values. On a tf-api
+  without that change, Klaviyo calls go to the proxy and are denied.
+- S3: tf-api uses AWS SDK v2 (`AWS_ENDPOINT_URL=http://minio:9000`, virtual-host style). MinIO runs with
+  `MINIO_DOMAIN=minio` and one network alias `<bucket>.minio` per bucket name from `.env`, so no tf-api change is
+  needed. minio-init seeds only what exists in repo files: the vector-search repo's `search_model.json` into
+  `SEARCH_MODEL_S3_BUCKET`. No catalog JSON, sitemap or Yotpo export exists locally: those buckets stay empty.
+- Mail: Kratos courier -> Mailpit (`:18025`). tf-api sends via the Mailgun HTTP API, and its client deliberately
+  ignores `MAILGUN_BASE_URL` (fixed base URL), so `MAILGUN_*` stays unset: tf-api mail (cancel/support/order
+  emails) is not sent locally.
+- Builder.io: unreachable. Offline preflight requires an empty `proxy/allowlist.txt` and has no separate read-only
+  list, so Builder is not allow-listed. Funnel Builder pages 404; the funnels header/footer come from fixtures.
 - tfhcore: an audit found remaining tfhcore calls that **will fail locally until moved to tf-api**:
   memberportal (per-page session create, addresses, search, logger, email change, old cancel flow, token refresh)
   and tf-api (cart-session fallback, Redis session dependency, two MySQL jobs). tfhcore is never configured here.

@@ -7,6 +7,8 @@
 [ -d "$APPS/tf-api/src" ] || die "apps/tf-api missing. Run: make bootstrap"
 "$ROOT/scripts/preflight.sh"
 export BUILDX_NO_DEFAULT_ATTESTATIONS=1
+# VECTOR=1 also starts the vector-search POC (profile `vector`).
+[ "${VECTOR:-}" = "1" ] && export COMPOSE_PROFILES=vector
 dc up -d --build
 # `compose up --wait` treats the one-shot jobs' exit 0 as failure (compose 2.31), so poll our own health check.
 for i in $(seq 1 60); do

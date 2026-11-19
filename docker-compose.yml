@@ -21,8 +21,8 @@ x-proxy-env: &proxy-env
   HTTPS_PROXY: http://proxy:8888
   http_proxy: http://proxy:8888
   https_proxy: http://proxy:8888
-  NO_PROXY: localhost,127.0.0.1,postgres,redis,minio,mailpit,klaviyo-recorder,tf-api,tf-apigateway,kratos,keto,memberportal
-  no_proxy: localhost,127.0.0.1,postgres,redis,minio,mailpit,klaviyo-recorder,tf-api,tf-apigateway,kratos,keto,memberportal
+  NO_PROXY: localhost,127.0.0.1,postgres,redis,minio,mailpit,klaviyo-recorder,tf-api,tf-apigateway,kratos,keto,memberportal,admin-panel,aff-landing-pages,vector-search
+  no_proxy: localhost,127.0.0.1,postgres,redis,minio,mailpit,klaviyo-recorder,tf-api,tf-apigateway,kratos,keto,memberportal,admin-panel,aff-landing-pages,vector-search
 
 x-stub: &stub
   image: alpine:3.20
@@ -148,7 +148,8 @@ services:
       TF_COMPOSITION_API_BASE_URL: ${TF_COMPOSITION_API_BASE_URL:-}
       TF_COMPOSITION_API_TOKEN: ${TF_COMPOSITION_API_TOKEN:-}
       TF_SELLING_PLAN_ID: ${TF_SELLING_PLAN_ID:-}
-      # S3 -> MinIO (AWS SDK v2 honours AWS_ENDPOINT_URL; path-style addressing TODO, see docs/local-env.md)
+      # S3 -> MinIO. AWS SDK v2 honours AWS_ENDPOINT_URL; it uses virtual-host style (<bucket>.minio:9000), which
+      # MinIO serves via MINIO_DOMAIN=minio + a network alias per bucket (see the minio service). No tf-api change.
       AWS_ENDPOINT_URL: http://minio:9000
       AWS_KEY: ${MINIO_ROOT_USER:-tfh-local-minio}
       AWS_SECRET: ${MINIO_ROOT_PASSWORD:-tfh-local-minio-pw}
@@ -166,11 +167,13 @@ services:
       SITEMAP_S3_KEY: ${SITEMAP_S3_KEY:-}
       YOTPO_S3_BUCKET: ${YOTPO_S3_BUCKET:-}
       YOTPO_S3_KEY: ${YOTPO_S3_KEY:-}
-      # Klaviyo: tf-api's base URL is a hard-coded constant (constants.KlaviyoAPIBaseURL). Until an env-override
-      # PR lands, Klaviyo calls from tf-api go to the proxy and are DENIED (not in allow-list). Recorder below.
-      KLAVIYO_PUBLIC_KEY: ${KLAVIYO_PUBLIC_KEY:-}
-      KLAVIYO_PRIVATE_KEY: ${KLAVIYO_PRIVATE_KEY:-}
-      KLAVIYO_LIST_ID: ${KLAVIYO_LIST_ID:-}
+      # Klaviyo -> local recorder. KLAVIYO_API_BASE_URL needs tf-api branch tfh-local/klaviyo-base-url (PR to develop);
+      # on a tf-api without it, Klaviyo calls go to the proxy and are DENIED. The key/list values are local
+      # placeholders (not real keys) so tf-api does not skip Klaviyo; they only ever reach the recorder.
+      KLAVIYO_API_BASE_URL: http://klaviyo-recorder:8090/api
+      KLAVIYO_PUBLIC_KEY: ${KLAVIYO_PUBLIC_KEY:-tfh-local-recorder-only}
+      KLAVIYO_PRIVATE_KEY: ${KLAVIYO_PRIVATE_KEY:-tfh-local-recorder-only}
+      KLAVIYO_LIST_ID: ${KLAVIYO_LIST_ID:-tfhlocal}
       KLAVIYO_LIST_ID_2: ${KLAVIYO_LIST_ID_2:-}
       KLAVIYO_LIST_ID_3: ${KLAVIYO_LIST_ID_3:-}
       KLAVIYO_LIST_ID_4: ${KLAVIYO_LIST_ID_4:-}
@@ -214,6 +217,9 @@ services:
       - "127.0.0.1:${MINIO_CONSOLE_HOST_PORT:-19001}:19001"
       - "127.0.0.1:${KLAVIYO_RECORDER_HOST_PORT:-18090}:18090"
       - "127.0.0.1:${MEMBERPORTAL_HOST_PORT:-13001}:13001"
+      - "127.0.0.1:${ADMIN_PANEL_HOST_PORT:-13002}:13002"
+      - "127.0.0.1:${FUNNELS_HOST_PORT:-13003}:13003"
+      - "127.0.0.1:${VECTOR_SEARCH_HOST_PORT:-18077}:18077"
       - "127.0.0.1:${APIGATEWAY_HOST_PORT:-13004}:13004"
       - "127.0.0.1:${KRATOS_PUBLIC_HOST_PORT:-14433}:14433"
       - "127.0.0.1:${KRATOS_ADMIN_HOST_PORT:-14434}:14434"
@@ -233,13 +239,22 @@ services:
     environment:
       MINIO_ROOT_USER: ${MINIO_ROOT_USER:-tfh-local-minio}
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-tfh-local-minio-pw}
+      MINIO_DOMAIN: minio   # virtual-host style: <bucket>.minio -> bucket (AWS SDK default addressing)
     volumes: [minio-data:/data]
     healthcheck:
       test: ["CMD", "mc", "ready", "local"]
       interval: 5s
       timeout: 5s
       retries: 20
-    networks: [internal]
+    networks:
+      internal:
+        # One alias per bucket name from .env so <bucket>.minio resolves to MinIO (virtual-host style S3).
+        aliases:
+          - ${AWS_BUCKET:-tfh-local-assets}.minio
+          - ${CATALOG_S3_BUCKET:-tfh-local-catalog}.minio
+          - ${SEARCH_MODEL_S3_BUCKET:-tfh-local-search}.minio
+          - ${SITEMAP_S3_BUCKET:-tfh-local-sitemap}.minio
+          - ${YOTPO_S3_BUCKET:-tfh-local-yotpo}.minio
 
   minio-init:
     image: pgsty/minio:RELEASE.2026-08-04T00-00-00Z
@@ -249,7 +264,12 @@ services:
       MINIO_ROOT_USER: ${MINIO_ROOT_USER:-tfh-local-minio}
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-tfh-local-minio-pw}
       BUCKETS: "${AWS_BUCKET:-} ${CATALOG_S3_BUCKET:-} ${SEARCH_MODEL_S3_BUCKET:-} ${SITEMAP_S3_BUCKET:-} ${YOTPO_S3_BUCKET:-}"
-    volumes: ["./minio:/minio:ro"]
+      SEARCH_MODEL_S3_BUCKET: ${SEARCH_MODEL_S3_BUCKET:-}
+      SEARCH_MODEL_S3_KEY: ${SEARCH_MODEL_S3_KEY:-}
+    volumes:
+      - ./minio:/minio:ro
+      # Seed source (repo files only): the vector-search repo's exported search model.
+      - ./apps/vector-search-trulyfreehome/data:/seed/search:ro
     depends_on:
       minio: { condition: service_healthy }
     networks: [internal]
@@ -374,6 +394,8 @@ services:
         overlay: ./docker/memberportal-overlay
     image: tfh-local/memberportal:local
     restart: unless-stopped
+    # No memory cap: capped at 2-4 GB, next dev restarts itself or is OOM-killed while compiling /dashboard
+    # after login. The admin panel and funnels are capped instead (Docker Desktop has ~8 GB for the whole stack).
     environment:
       <<: *proxy-env
       NODE_ENV: development
@@ -403,15 +425,94 @@ services:
       tf-api: { condition: service_started }
     networks: [internal]
 
-  # TODO(admin-panel): new docker/admin-panel.Dockerfile (repo has none); TF_ADMIN_API_URL=http://tf-api:3000.
-  admin-panel: *stub
-  # TODO(aff-landing-pages): apps/nextjs-aff-landing-pages/Dockerfile exists; wire TF_API_DOMAIN, Kratos URLs.
-  aff-landing-pages: *stub
+  # ---------------------------------------------------------------- admin panel + funnels (M3)
+  # Both `next dev` (docker/next-dev.Dockerfile; repo env files dropped). Point ONLY at local tf-api/gateway/Kratos.
+  # Staff login: admin /login links to the funnels app's /internal_admin/login (Kratos flow), which sets the
+  # session cookie on localhost (cookies are not port-scoped, so the admin panel on :13002 sees it).
+  admin-panel:
+    build:
+      context: ./apps/nextjs-campaign-admin-panel
+      dockerfile: ../../docker/next-dev.Dockerfile
+    image: tfh-local/admin-panel:local
+    restart: unless-stopped
+    mem_limit: 2g   # 1.5 GB is OOM-killed while compiling /dashboard
+    environment:
+      <<: *proxy-env
+      NODE_OPTIONS: --max-old-space-size=1536
+      NODE_ENV: development
+      NEXT_PUBLIC_ENVIRONMENT: local
+      NEXT_PUBLIC_FEATURE_FLAG_ENVIRONMENT: ${APP_ENV:-local}
+      TF_API_DOMAIN: http://tf-api:3000
+      TF_ADMIN_API_URL: http://tf-api:3000
+      TF_ADMIN_API_ORIGIN: http://localhost:${ADMIN_PANEL_HOST_PORT:-13002}
+      TF_INTERNAL_APIGATEWAY_DOMAIN: http://tf-apigateway:8080
+      KRATOS_PUBLIC_URL: http://kratos:4433
+      NEXT_PUBLIC_REDIRECT_URL: http://localhost:${ADMIN_PANEL_HOST_PORT:-13002}
+      NEXT_PUBLIC_CUSTOMER_FRONT_URL: http://localhost:${FUNNELS_HOST_PORT:-13003}
+      NEXT_PUBLIC_MEMBER_PORTAL_URL: http://localhost:${MEMBERPORTAL_HOST_PORT:-13001}
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://127.0.0.1:4318
+      NEXT_PUBLIC_OTEL_EXPORTER_OTLP_ENDPOINT: ""
+      NEXT_PUBLIC_SENTRY_DSN: ""
+      # NEVER set: CLOUDFLARE_* (cache purge), NEXT_PUBLIC_TRULY_FREE_CORE_API_URL (tfhcore OUT).
+    depends_on:
+      tf-api: { condition: service_started }
+      tf-apigateway: { condition: service_started }
+    networks: [internal]
 
+  aff-landing-pages:
+    build:
+      context: ./apps/nextjs-aff-landing-pages
+      dockerfile: ../../docker/next-dev.Dockerfile
+    image: tfh-local/aff-landing-pages:local
+    restart: unless-stopped
+    mem_limit: 1500m
+    environment:
+      <<: *proxy-env
+      NODE_OPTIONS: --max-old-space-size=1024
+      NODE_ENV: development
+      NEXT_PUBLIC_ENVIRONMENT: local
+      TF_API_DOMAIN: http://tf-api:3000
+      TF_INTERNAL_APIGATEWAY_DOMAIN: http://tf-apigateway:8080
+      KRATOS_PUBLIC_URL: http://kratos:4433
+      NEXT_PUBLIC_BASE_URL: http://localhost:${FUNNELS_HOST_PORT:-13003}
+      NEXT_PUBLIC_HOST_NAME: localhost
+      NEXT_PUBLIC_MEMBER_PORTAL_LOGIN_URL: http://localhost:${MEMBERPORTAL_HOST_PORT:-13001}/login
+      CORS_ALLOWED_ORIGINS: http://localhost:${FUNNELS_HOST_PORT:-13003},http://localhost:${ADMIN_PANEL_HOST_PORT:-13002}
+      # Builder.io is unreachable offline (proxy denies all; preflight allows no allow-list entry in offline mode).
+      # Placeholder, not a key: Builder-backed pages (/, /offers/*, /info/*, /pages/*) 404 locally.
+      NEXT_PUBLIC_BUILDER_API_KEY: tfh-local-offline
+      NEXT_PUBLIC_SENTRY_ENABLED: "false"
+      SENTRY_ENABLED: "false"
+      NEXT_PUBLIC_SENTRY_DSN: ""
+      NEXT_PUBLIC_DISABLE_REFERRALS_TRACKING_SCRIPT: "true"
+      # Search model: bundled unless flag search_model_s3_enabled is on; then S3 = local MinIO (never AWS).
+      SEARCH_MODEL_S3_BUCKET: ${SEARCH_MODEL_S3_BUCKET:-}
+      SEARCH_MODEL_S3_KEY: ${SEARCH_MODEL_S3_KEY:-}
+      AWS_ENDPOINT_URL: http://minio:9000
+      AWS_REGION: ${AWS_REGION:-us-east-1}
+      AWS_ACCESS_KEY_ID: ${MINIO_ROOT_USER:-tfh-local-minio}
+      AWS_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD:-tfh-local-minio-pw}
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://127.0.0.1:4318
+      # NEVER set: SITEMAP_S3_URL (remote CDN), BRAINTREE_*/RECAPTCHA_*/APPLE_PAY_* (payments), KLAVIYO_API_KEY,
+      # TFH_CORE_* (tfhcore OUT). Checkout needs Sticky/TF: expected to fail offline.
+    depends_on:
+      tf-api: { condition: service_started }
+    networks: [internal]
+
+  # Vector search POC (profile `vector`: `make up VECTOR=1`). Local backend only: data/ files from the repo
+  # (bind-mounted). VERTEX_* / GOOGLE_CLOUD_PROJECT are never set, so the Vertex AI backend is never used.
   vector-search:
-    <<: *stub
+    build:
+      context: ./docker
+      dockerfile: vector-search.Dockerfile
+    image: tfh-local/vector-search:local
     profiles: ["vector"]
-    # TODO(vector-search): new docker/vector-search.Dockerfile (python, uvicorn app.main:app --port 8077).
+    restart: unless-stopped
+    working_dir: /app
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8077"]
+    volumes:
+      - ./apps/vector-search-trulyfreehome:/app:ro
+    networks: [internal]
 
   # ---------------------------------------------------------------- cron (refuses; see cron/README.md)
   cron:
