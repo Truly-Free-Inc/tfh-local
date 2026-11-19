@@ -4,7 +4,7 @@
 load_env
 fail=0
 for s in postgres redis proxy ingress mailpit minio klaviyo-recorder tf-api \
-         gateway-postgres kratos keto tf-apigateway memberportal; do
+         gateway-postgres kratos keto tf-apigateway memberportal admin-panel aff-landing-pages; do
   st="$(dc ps --format '{{.State}} {{.Health}}' "$s" 2>/dev/null | head -1)"
   case "$st" in running*unhealthy*|"") red "unhealthy: $s ($st)"; fail=1 ;; running*) echo "ok: $s ($st)" ;; *) red "down: $s ($st)"; fail=1 ;; esac
 done
@@ -29,6 +29,11 @@ probe kratos-public   "http://127.0.0.1:${KRATOS_PUBLIC_HOST_PORT:-14433}/health
 if curl -fsS -m 90 -o /dev/null "http://127.0.0.1:${MEMBERPORTAL_HOST_PORT:-13001}/login"; then
   echo "ok: memberportal http://127.0.0.1:${MEMBERPORTAL_HOST_PORT:-13001}/login"
 else red "not answering: memberportal /login"; fail=1; fi
+# Admin panel + funnels also run `next dev` (first compile is slow).
+probe_slow() { if curl -sS -m 120 -o /dev/null -w '%{http_code}' "$2" | grep -qE '^(200|30[0-9])$'; then echo "ok: $1 $2"; else red "not answering: $1 $2"; fail=1; fi; }
+probe_slow admin-panel "http://127.0.0.1:${ADMIN_PANEL_HOST_PORT:-13002}/login"
+probe_slow funnels     "http://127.0.0.1:${FUNNELS_HOST_PORT:-13003}/internal_admin/login"
+if [ -n "$(dc ps -q vector-search 2>/dev/null)" ]; then probe vector-search "http://127.0.0.1:${VECTOR_SEARCH_HOST_PORT:-18077}/"; fi
 # Egress must stay locked: the proxy must refuse a host that is not on the allow-list.
 code="$(dc exec -T tf-api bash -c 'exec 3<>/dev/tcp/proxy/8888 && printf "GET http://a.klaviyo.com/ HTTP/1.0\r\nHost: a.klaviyo.com\r\n\r\n" >&3 && head -1 <&3' 2>/dev/null | awk '{print $2}' || true)"
 case "$code" in 403) echo "ok: proxy denies non-allow-listed host (a.klaviyo.com -> $code)" ;; *) red "proxy did NOT deny a.klaviyo.com (got '${code:-no response}')"; fail=1 ;; esac

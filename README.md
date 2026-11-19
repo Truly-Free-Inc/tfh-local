@@ -58,8 +58,9 @@ AI per-ticket instructions: [docs/ai-loop.md](docs/ai-loop.md). Suite env: [docs
 | tf-apigateway, kratos, keto, gateway-postgres | **live** | Gateway `:13004/health`; Kratos public `:14433` (admin `:14434`, loopback); Keto internal. Mirrors the gateway repo's compose; Kratos config `auth/kratos/kratos.yml` (localhost URLs, Google off, courier -> Mailpit). |
 | memberportal | **live** (`next dev`) | `http://localhost:13001/login`. Points only at local tf-api. Builder.io is unreachable offline: tfh-local overlays `/login` and `/dashboard` with the portal's own LoginForm / "Dashboard Page Content" components (`docker/memberportal-overlay/`); other Builder pages fail. |
 | auth users | **seeded** | `make seed-auth` (also run by `make up`): "test test" portal customer (tf-api DB + Kratos) and a local admin (Kratos, Keto role `admin`). Credentials in `.env`. `make prove-login` = headless login proof. |
-| admin-panel, aff-landing-pages | **stub** (profile `stub`) | TODO in docker-compose.yml. |
-| vector-search | **stub** (profile `vector`) | POC; TODO Dockerfile. |
+| admin-panel | **live** (`next dev`) | `http://localhost:13002`. Local tf-api / gateway / Kratos only. Staff login goes through the funnels app's `/internal_admin/login` (Kratos). |
+| aff-landing-pages (funnels) | **live** (`next dev`) | `http://localhost:13003`. Builder.io pages (`/`, `/offers/*`, `/info/*`, `/pages/*`) 404 offline (Builder unreachable; no allow-list entry in offline mode). Checkout needs Sticky/TF: fails offline. |
+| vector-search | **live** (profile `vector`: `make up VECTOR=1`) | `http://localhost:18077`. Local data files from the repo; Vertex AI backend never configured. |
 | cron | **refuses** (profile `cron`) | See [cron/README.md](cron/README.md). |
 
 Out of scope: builderio_storefront, tfhcore, legacy repos, Avalara, Syteline/Infor.
