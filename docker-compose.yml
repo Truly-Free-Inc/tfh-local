@@ -43,6 +43,7 @@ volumes:
   minio-data: {}
   klaviyo-data: {}
   gateway-postgres-data: {}
+  next-build-lock: {}   # serializes `next build` across the Next.js apps (docker/next-app-start.sh)
 
 services:
   # ---------------------------------------------------------------- core (wired)
@@ -118,6 +119,11 @@ services:
       <<: *proxy-env
       PORT: "3000"
       APP_ENV: ${APP_ENV:-local}
+      # HTTP Basic auth on every route except /ping, /health, Zaymo (src/middleware/basic_auth.go), like deployed envs.
+      # Generated local creds; the Next.js apps send them server-side. BASIC_AUTH_ENABLED=false only to debug.
+      BASIC_AUTH_ENABLED: ${TF_API_BASIC_AUTH_ENABLED:-true}
+      BASIC_AUTH_USERNAME: ${TF_API_BASIC_AUTH_USERNAME:?set in .env (make bootstrap)}
+      BASIC_AUTH_PASSWORD: ${TF_API_BASIC_AUTH_PASSWORD:?set in .env (make bootstrap)}
       DB_HOST: postgres
       DB_HOST_RO: postgres
       DB_PORT: "5432"
@@ -397,6 +403,9 @@ services:
     restart: unless-stopped
     volumes:
       - ./docker/node-egress-preload.cjs:/opt/tfh-local/node-egress-preload.cjs:ro
+      - ./docker/next-app-start.sh:/opt/tfh-local/next-app-start.sh:ro
+      - ./docker/next-font-offline.cjs:/opt/tfh-local/next-font-offline.cjs:ro
+      - next-build-lock:/build-lock
     # Memory (M5a, measured): next dev's `next-server` child holds ~10.4k webpack modules per compiled route; its
     # anon RSS reaches 4.1-4.5 GB after ~7 routes (beyond the V8 heap cap: native/external memory). Uncapped on the
     # old ~8 GB VM it starved the VM; restarts were not flagged OOMKilled (the child, not PID 1, dies; restart:
@@ -404,14 +413,20 @@ services:
     # Now: a cgroup limit (an OOM stays inside this container) paired with a V8 heap cap well below it (headroom for
     # SWC/webpack native memory), so V8 collects harder before the kernel steps in. Needs Docker Desktop >= 12 GB.
     mem_limit: ${MEMBERPORTAL_MEM_LIMIT:-5g}
+    # LOCAL_APP_MODE=prod (default): next build once per container + next start (docker/next-app-start.sh). Fixes the
+    # dev-server memory growth / self-restarts and cold per-route compiles. LOCAL_APP_MODE=dev -> next dev.
+    command: ["sh", "/opt/tfh-local/next-app-start.sh"]
     environment:
       <<: *proxy-env
+      LOCAL_APP_MODE: ${LOCAL_APP_MODE:-prod}
       # Heap cap + server-side fetch through the egress proxy (Builder.io read-only); see docker/node-egress-preload.cjs.
       NODE_OPTIONS: --max-old-space-size=${MEMBERPORTAL_HEAP_MB:-3072} --require /opt/tfh-local/node-egress-preload.cjs
-      NODE_ENV: development
+      NEXT_BUILD_NODE_OPTIONS: --max-old-space-size=${MEMBERPORTAL_BUILD_HEAP_MB:-3584} --require /opt/tfh-local/node-egress-preload.cjs
       ENVIRONMENT: local
       NEXT_PUBLIC_ENVIRONMENT: local
       TF_API_DOMAIN: http://tf-api:3000
+      BASIC_AUTH_USERNAME: ${TF_API_BASIC_AUTH_USERNAME:?set in .env (make bootstrap)}
+      BASIC_AUTH_PASSWORD: ${TF_API_BASIC_AUTH_PASSWORD:?set in .env (make bootstrap)}
       NEXT_PUBLIC_TF_API_DOMAIN: http://localhost:${TF_API_HOST_PORT:-13000}
       NEXT_PUBLIC_API_BASE_URL: http://localhost:${TF_API_HOST_PORT:-13000}
       NEXT_PUBLIC_TF_CHECKOUT_DOMAIN: http://localhost:${TF_API_HOST_PORT:-13000}
@@ -446,14 +461,22 @@ services:
       dockerfile: ../../docker/next-dev.Dockerfile
     image: tfh-local/admin-panel:local
     restart: unless-stopped
-    mem_limit: 2g   # 1.5 GB is OOM-killed while compiling /dashboard
+    mem_limit: ${ADMIN_MEM_LIMIT:-3g}   # dev: 1.5 GB is OOM-killed compiling /dashboard; prod: room for next build
+    command: ["sh", "/opt/tfh-local/next-app-start.sh"]
+    volumes:
+      - ./docker/next-app-start.sh:/opt/tfh-local/next-app-start.sh:ro
+      - ./docker/next-font-offline.cjs:/opt/tfh-local/next-font-offline.cjs:ro
+      - next-build-lock:/build-lock
     environment:
       <<: *proxy-env
+      LOCAL_APP_MODE: ${LOCAL_APP_MODE:-prod}
       NODE_OPTIONS: --max-old-space-size=1536
-      NODE_ENV: development
+      NEXT_BUILD_NODE_OPTIONS: --max-old-space-size=${ADMIN_BUILD_HEAP_MB:-2048}
       NEXT_PUBLIC_ENVIRONMENT: local
       NEXT_PUBLIC_FEATURE_FLAG_ENVIRONMENT: ${APP_ENV:-local}
       TF_API_DOMAIN: http://tf-api:3000
+      BASIC_AUTH_USERNAME: ${TF_API_BASIC_AUTH_USERNAME:?set in .env (make bootstrap)}
+      BASIC_AUTH_PASSWORD: ${TF_API_BASIC_AUTH_PASSWORD:?set in .env (make bootstrap)}
       TF_ADMIN_API_URL: http://tf-api:3000
       TF_ADMIN_API_ORIGIN: http://localhost:${ADMIN_PANEL_HOST_PORT:-13002}
       TF_INTERNAL_APIGATEWAY_DOMAIN: http://tf-apigateway:8080
@@ -479,15 +502,22 @@ services:
     # Memory (root cause, M5a): at 1500m with a 1024 MB heap, next dev's `next-server` child hit ~1.35 GB RSS
     # (heap + SWC/webpack native memory) and was cgroup-OOM-killed 5x under the gate (exit 0, not flagged OOMKilled).
     # Limit ~1.5x the heap cap leaves room for native memory.
-    mem_limit: ${FUNNELS_MEM_LIMIT:-3g}
+    mem_limit: ${FUNNELS_MEM_LIMIT:-4g}
+    command: ["sh", "/opt/tfh-local/next-app-start.sh"]
     volumes:
       - ./docker/node-egress-preload.cjs:/opt/tfh-local/node-egress-preload.cjs:ro
+      - ./docker/next-app-start.sh:/opt/tfh-local/next-app-start.sh:ro
+      - ./docker/next-font-offline.cjs:/opt/tfh-local/next-font-offline.cjs:ro
+      - next-build-lock:/build-lock
     environment:
       <<: *proxy-env
+      LOCAL_APP_MODE: ${LOCAL_APP_MODE:-prod}
       NODE_OPTIONS: --max-old-space-size=${FUNNELS_HEAP_MB:-2048} --require /opt/tfh-local/node-egress-preload.cjs
-      NODE_ENV: development
+      NEXT_BUILD_NODE_OPTIONS: --max-old-space-size=${FUNNELS_BUILD_HEAP_MB:-3072} --require /opt/tfh-local/node-egress-preload.cjs
       NEXT_PUBLIC_ENVIRONMENT: local
       TF_API_DOMAIN: http://tf-api:3000
+      BASIC_AUTH_USERNAME: ${TF_API_BASIC_AUTH_USERNAME:?set in .env (make bootstrap)}
+      BASIC_AUTH_PASSWORD: ${TF_API_BASIC_AUTH_PASSWORD:?set in .env (make bootstrap)}
       TF_INTERNAL_APIGATEWAY_DOMAIN: http://tf-apigateway:8080
       KRATOS_PUBLIC_URL: http://kratos:4433
       NEXT_PUBLIC_BASE_URL: http://localhost:${FUNNELS_HOST_PORT:-13003}
@@ -509,7 +539,9 @@ services:
       AWS_ACCESS_KEY_ID: ${MINIO_ROOT_USER:?set in .env (make bootstrap)}
       AWS_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD:?set in .env (make bootstrap)}
       OTEL_EXPORTER_OTLP_ENDPOINT: http://127.0.0.1:4318
-      # NEVER set: SITEMAP_S3_URL (remote CDN), BRAINTREE_*/RECAPTCHA_*/APPLE_PAY_* (payments), KLAVIYO_API_KEY,
+      # /sitemap.xml rewrite target: the LOCAL MinIO object written by `make seed-sitemap` (never the remote CDN).
+      SITEMAP_S3_URL: http://minio:9000/${SITEMAP_S3_BUCKET:-tfh-local-sitemap}/${SITEMAP_S3_KEY:-sitemap.xml}
+      # NEVER set: a remote SITEMAP_S3_URL (CDN), BRAINTREE_*/RECAPTCHA_*/APPLE_PAY_* (payments), KLAVIYO_API_KEY,
       # TFH_CORE_* (tfhcore OUT). Checkout needs Sticky/TF: expected to fail offline.
     depends_on:
       tf-api: { condition: service_started }

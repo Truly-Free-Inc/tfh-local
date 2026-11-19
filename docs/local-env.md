@@ -76,7 +76,7 @@ Gate tag: `@gate` (`npm run test:gate` = `--grep @gate --grep-invert @quarantine
 - S3: tf-api uses AWS SDK v2 (`AWS_ENDPOINT_URL=http://minio:9000`, virtual-host style). MinIO runs with
   `MINIO_DOMAIN=minio` and one network alias `<bucket>.minio` per bucket name from `.env`, so no tf-api change is
   needed. minio-init seeds only what exists in repo files: the vector-search repo's `search_model.json` into
-  `SEARCH_MODEL_S3_BUCKET`. No catalog JSON, sitemap or Yotpo export exists locally: those buckets stay empty.
+  `SEARCH_MODEL_S3_BUCKET`. `make seed-sitemap` writes sitemap.xml from the local sitemap_entries (tf-api's own generator, local MinIO) and the funnels app serves it at `/sitemap.xml` (SITEMAP_S3_URL -> local MinIO). No catalog JSON (tf-api builds it only from a cron or an admin product create) or Yotpo export exists locally.
 - Mail: Kratos courier -> Mailpit (`:18025`). tf-api sends via the Mailgun HTTP API, and its client deliberately
   ignores `MAILGUN_BASE_URL` (fixed base URL), so `MAILGUN_*` stays unset: tf-api mail (cancel/support/order
   emails) is not sent locally.
@@ -101,3 +101,16 @@ Gate tag: `@gate` (`npm run test:gate` = `--grep @gate --grep-invert @quarantine
   (Builder symbol), Google login, Google Fonts (fallback font), GTM/Yotpo/referral scripts, portal CloudWatch
   logger (defaults to a remote develop host; DNS fails, nothing leaves), OTEL trace proxy (500, harmless), and every
   tfhcore-backed flow (addresses, header search, logger, email change, old cancel flow, token refresh).
+
+## App mode, tf-api Basic auth (M6, Nov 19 2026)
+- `LOCAL_APP_MODE=prod` (default): memberportal, admin panel and funnels run a production build (`docker/next-app-start.sh`:
+  `next build` once per container, serialized across apps by a lock volume, then `next start` / the standalone server).
+  Why: `next dev` keeps every compiled route's webpack graph in memory (memberportal reached 4.1-4.8 GB and restarted
+  itself with "approaching the used memory threshold"), and each first hit compiled for 8-23 s. A production server
+  holds only built routes. `LOCAL_APP_MODE=dev` brings back `next dev` (hot reload). `make up` / `make verify` wait for
+  the builds (`scripts/warmup.sh --wait-only`). Fonts: `next/font/google` is answered offline by
+  `docker/next-font-offline.cjs` (system-font fallback; Google Fonts stays blocked).
+- tf-api runs with `BASIC_AUTH_ENABLED=true` like deployed envs: every route except `/ping`, `/health` and Zaymo needs
+  Basic auth. `make bootstrap` generates `TF_API_BASIC_AUTH_USERNAME/PASSWORD` into `.env` (local-only values); compose
+  passes them to tf-api and, as `BASIC_AUTH_USERNAME/PASSWORD` (server env only), to the three Next.js apps; `make verify`
+  exports `TF_API_BASIC_AUTH=user:password` for tfh-automation. Values are never printed.
