@@ -42,6 +42,24 @@ require_key() {
   [[ "$KEY" =~ $KEY_RE ]] || die "KEY '$KEY' is not a Jira key like TFHFUNNEL-1234"
 }
 
+# safe_push <repo_dir> <branch> <pr_base>: push <branch> to origin/<branch> (explicit refspec, no force), but
+# REFUSE when the current branch or the target ref is main, master, develop, stage or the PR base branch.
+# Protected-branch pushes are how an AI "lands" work without review; this makes that impossible from tfh-local.
+PROTECTED_BRANCHES="main master develop stage"
+safe_push() {
+  local d="$1" b="$2" base="$3" cur p
+  cur="$(git -C "$d" rev-parse --abbrev-ref HEAD)"
+  [ -n "$b" ] && [ -n "$base" ] || { red "safe_push: branch and base are required"; return 1; }
+  [ "$cur" = "$b" ] || { red "REFUSED: $d is on '$cur', not '$b'"; return 1; }
+  for p in $PROTECTED_BRANCHES "$base" HEAD; do
+    if [ "$b" = "$p" ] || [ "$cur" = "$p" ]; then
+      red "REFUSED: will not push protected branch '$b' (current '$cur', PR base '$base') in $d"; return 1
+    fi
+  done
+  case "$b" in refs/*|*:*|+*|-*) red "REFUSED: unexpected ref syntax '$b'"; return 1 ;; esac
+  git -C "$d" push -u origin "refs/heads/$b:refs/heads/$b"
+}
+
 is_dirty() { [ -n "$(git -C "$1" status --porcelain)" ]; }
 
 # Host part of a URL or bare host: strip scheme, path, port, userinfo; lowercase.
