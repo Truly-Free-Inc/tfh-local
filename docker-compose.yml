@@ -220,6 +220,8 @@ services:
       - "127.0.0.1:${MEMBERPORTAL_HOST_PORT:-13001}:13001"
       - "127.0.0.1:${ADMIN_PANEL_HOST_PORT:-13002}:13002"
       - "127.0.0.1:${FUNNELS_HOST_PORT:-13003}:13003"
+      # Storefront URL (tfh-automation local storefront): same funnels app, own port so it can be pointed elsewhere later.
+      - "127.0.0.1:${STOREFRONT_HOST_PORT:-13005}:13005"
       - "127.0.0.1:${VECTOR_SEARCH_HOST_PORT:-18077}:18077"
       - "127.0.0.1:${APIGATEWAY_HOST_PORT:-13004}:13004"
       - "127.0.0.1:${KRATOS_PUBLIC_HOST_PORT:-14433}:14433"

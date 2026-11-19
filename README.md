@@ -35,6 +35,7 @@ plus `npm ci` (Playwright browsers: `npx playwright install webkit chromium fire
 | Member portal | http://localhost:13001/login |
 | Admin panel (staff login via funnels `/internal_admin/login`, Kratos) | http://localhost:13002 |
 | Funnels (aff-landing-pages) | http://localhost:13003 |
+| Storefront (funnels app; stage/prod storefront host) | http://localhost:13005 |
 | tf-api | http://localhost:13000/health |
 | tf-apigateway | http://localhost:13004/health |
 | Kratos public | http://localhost:14433 |
