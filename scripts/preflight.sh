@@ -21,6 +21,15 @@ matches() { # matches <host> <patternfile>
   printf '%s\n' "$1" | grep -Eiq -f <(printf '%s\n' "$pats")
 }
 
+# 0a. Pattern hygiene: every regex in the deny list, the egress allow-lists and the non-prod list must be
+#     ^...$ anchored with escaped dots (see lib.sh pattern_anchored). Applies in both EXTERNALS modes.
+for pf in "$DENY" "$ALLOW" "$NONPROD" "$ROOT/proxy/readonly-allowlist.txt"; do
+  [ -f "$pf" ] || continue
+  while IFS= read -r pat; do
+    pattern_anchored "$pat" || bad "${pf#$ROOT/} entry '$pat' is not anchored (^...\$) with escaped dots"
+  done < <(patterns "$pf")
+done
+
 # 0. EXTERNALS mode. offline (default) = Sticky/TF must be impossible to reach; real = non-prod hosts via the proxy.
 EXTERNALS="$(printf '%s' "${EXTERNALS:-offline}" | tr '[:upper:]' '[:lower:]')"
 case "$EXTERNALS" in offline|real) ;; *) bad "EXTERNALS='$EXTERNALS'. Must be 'offline' or 'real'." ;; esac

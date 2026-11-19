@@ -53,6 +53,18 @@ host_of() {
 # Non-comment, non-empty lines of a pattern file.
 patterns() { grep -vE '^[[:space:]]*(#|$)' "$1" || true; }
 
+# pattern_anchored <ERE>: true if the host pattern is ^...$ anchored and every literal dot is escaped.
+# Allowed unescaped dots: inside a bracket expression ([.-]) or as a wildcard (.* / .+). Anything else
+# (e.g. "klaviyo.com$", "^cdn.builder.io$") is refused: an unanchored/unescaped pattern can match far more
+# (or far less) than the author meant, which is exactly how deny lists leak.
+pattern_anchored() {
+  local p="$1" s
+  [[ "$p" == ^* && "$p" == *\$ ]] || return 1
+  s="$(printf '%s' "$p" | sed -E 's/\[[^]]*\]//g; s/\\\.//g; s/\.[*+]//g')"
+  case "$s" in *.*) return 1 ;; esac
+  return 0
+}
+
 dc() { docker compose --project-directory "$ROOT" -f "$ROOT/docker-compose.yml" "$@"; }
 
 # Current branch -> sha map of all checked-out repos, as JSON object lines.

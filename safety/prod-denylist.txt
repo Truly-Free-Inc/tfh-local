@@ -1,6 +1,7 @@
 # Production host patterns (POSIX ERE, matched case-insensitively against host names). preflight.sh refuses
 # if Sticky/TF hosts or any proxy/allowlist.txt entry matches. Sourced from tfh-automation config/envs.ts and
 # tf-api-cicd ingress/config host names. No secrets here.
+# EVERY line must be ^...$ anchored with escaped dots (only \. , [..], .* or .+); preflight refuses otherwise.
 # TODO(Richard): add the PRODUCTION Sticky host and the PRODUCTION TF Composition API host.
 ^(www\.)?trulyfreehome\.com$
 ^member\.trulyfreehome\.com$
@@ -16,12 +17,16 @@
 ^my\.trulyfreehome\.com$
 ^mygreenfills\.com$
 # Any host with a "prod"/"production" label
-(^|[.-])prod(uction)?([.-]|$)
+^(.*[.-])?prod(uction)?([.-].*)?$
+# Sticky (any instance, incl. the limelightcrm.com legacy domain): the only known instance is the one prod uses.
+^(.*\.)?sticky\.io$
+^(.*\.)?limelightcrm\.com$
 # Never-allowed services (local stack must not talk to them at all)
-klaviyo\.com$
-amazonaws\.com$
-avalara\.(com|net)$
-(^|\.)infor\.com$
-inforcloudsuite\.com$
-syteline
-tfhcore
+^(.*\.)?klaviyo\.com$
+^(.*\.)?mailgun\.(net|com|org)$
+^(.*\.)?amazonaws\.com$
+^(.*\.)?avalara\.(com|net)$
+^(.*\.)?infor\.com$
+^(.*\.)?inforcloudsuite\.com$
+^.*syteline.*$
+^.*tfhcore.*$
