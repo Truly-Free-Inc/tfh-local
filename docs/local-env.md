@@ -80,8 +80,11 @@ Gate tag: `@gate` (`npm run test:gate` = `--grep @gate --grep-invert @quarantine
 - Mail: Kratos courier -> Mailpit (`:18025`). tf-api sends via the Mailgun HTTP API, and its client deliberately
   ignores `MAILGUN_BASE_URL` (fixed base URL), so `MAILGUN_*` stays unset: tf-api mail (cancel/support/order
   emails) is not sent locally.
-- Builder.io: unreachable. Offline preflight requires an empty `proxy/allowlist.txt` and has no separate read-only
-  list, so Builder is not allow-listed. Funnel Builder pages 404; the funnels header/footer come from fixtures.
+- Builder.io: READ-ONLY (Michael, 2026-11-19 2:57 PM ET). `proxy/readonly-allowlist.txt` holds only `cdn.builder.io`;
+  preflight refuses any other entry in every mode (`READONLY_APPROVED`). Public keys come from `.env`
+  (`LOCAL_BUILDER_PUBLIC_KEY_PORTAL`/`_FUNNEL`). Node's fetch ignores `HTTPS_PROXY`, so `docker/node-egress-preload.cjs`
+  (NODE_OPTIONS --require) routes it through the proxy and refuses non-GET to read-only hosts. Browser-side Builder
+  requests go straight from your browser (host network).
 - tfhcore: an audit found remaining tfhcore calls that **will fail locally until moved to tf-api**:
   memberportal (per-page session create, addresses, search, logger, email change, old cancel flow, token refresh)
   and tf-api (cart-session fallback, Redis session dependency, two MySQL jobs). tfhcore is never configured here.

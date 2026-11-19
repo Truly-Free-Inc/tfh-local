@@ -37,4 +37,32 @@ if [ -n "$(dc ps -q vector-search 2>/dev/null)" ]; then probe vector-search "htt
 # Egress must stay locked: the proxy must refuse a host that is not on the allow-list.
 code="$(dc exec -T tf-api bash -c 'exec 3<>/dev/tcp/proxy/8888 && printf "GET http://a.klaviyo.com/ HTTP/1.0\r\nHost: a.klaviyo.com\r\n\r\n" >&3 && head -1 <&3' 2>/dev/null | awk '{print $2}' || true)"
 case "$code" in 403) echo "ok: proxy denies non-allow-listed host (a.klaviyo.com -> $code)" ;; *) red "proxy did NOT deny a.klaviyo.com (got '${code:-no response}')"; fail=1 ;; esac
+# Node egress guard (docker/node-egress-preload.cjs) must be ACTIVE in every container that loads it, i.e. it found the
+# app's undici. A node process started with the container's NODE_OPTIONS reports the state the dev server got.
+for s in memberportal aff-landing-pages; do
+  gs="$(dc exec -T "$s" node -e 'process.stdout.write(String(globalThis.__TFH_EGRESS_GUARD||"NOT LOADED"))' 2>/dev/null | tail -1 || true)"
+  if [ "$gs" = ACTIVE ]; then echo "ok: egress guard ACTIVE in $s"; else red "egress guard not active in $s (got '${gs:-no response}')"; fail=1; fi
+done
+# Builder.io read-only egress (proxy/readonly-allowlist.txt). Through the proxy: the builder.io root / write+admin API
+# hosts must be DENIED (403, refused before any connection), cdn.builder.io ALLOWED (CONNECT 200).
+connect_code() { dc exec -T tf-api bash -c "exec 3<>/dev/tcp/proxy/8888 && printf 'CONNECT $1:443 HTTP/1.0\r\nHost: $1:443\r\n\r\n' >&3 && head -1 <&3" 2>/dev/null | awk '{print $2}' || true; }
+for h in builder.io api.builder.io; do
+  code="$(connect_code "$h")"
+  if [ "$code" = 403 ]; then echo "ok: proxy denies $h ($code)"; else red "proxy did NOT deny $h (got '${code:-no response}')"; fail=1; fi
+done
+if [ -s "$ROOT/proxy/readonly-allowlist.txt" ] && grep -q 'cdn' "$ROOT/proxy/readonly-allowlist.txt"; then
+  code="$(connect_code cdn.builder.io)"
+  if [ "$code" = 200 ]; then echo "ok: proxy allows cdn.builder.io ($code)"; else red "proxy does not allow cdn.builder.io (got '${code:-no response}')"; fail=1; fi
+  # End to end from a Node app: GET to cdn.builder.io works via the guard + proxy; POST is refused locally by the guard.
+  r="$(dc exec -T memberportal node -e '
+    const u="https://cdn.builder.io/";
+    (async () => {
+      let get, post;
+      try { get = "status " + (await fetch(u, { method: "GET", redirect: "manual" })).status; } catch (e) { get = "ERR " + (e.cause && e.cause.message || e.message); }
+      try { post = "status " + (await fetch(u, { method: "POST", body: "x" })).status; } catch (e) { post = "ERR " + (e.cause && e.cause.message || e.message); }
+      console.log("GET=" + get + "|POST=" + post);
+    })();' 2>/dev/null | tail -1 || true)"
+  case "$r" in "GET=status "*"|POST=ERR "*refused*) echo "ok: memberportal fetch cdn.builder.io GET allowed, POST refused ($r)" ;;
+    *) red "memberportal Builder read-only check failed ($r)"; fail=1 ;; esac
+fi
 [ $fail -eq 0 ] && grn "health: OK" || { red "health: FAILED"; exit 1; }

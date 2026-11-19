@@ -12,7 +12,8 @@ same ticket branch, verify everything locally (including the core gate), then op
 - **Never change feature flags** (seeded once at first DB init).
 - **No secrets in git.** `.env.example` = names only. Run `make check-secrets` before every commit.
 - **`scripts/preflight.sh` runs before `make up` / `make verify` and refuses** on any violation. Do not bypass it.
-- App containers have **no direct internet**; egress only through an allow-list proxy (non-prod Sticky + TF only).
+- App containers have **no direct internet**; egress only through an allow-list proxy (non-prod Sticky + TF only,
+  empty offline) plus a fixed read-only list (`cdn.builder.io`, approved by Michael 2026-11-19).
 - **AI opens PRs, never merges.**
 
 Details: [docs/safety.md](docs/safety.md).
@@ -54,8 +55,8 @@ What is offline, and why:
 - **tfhcore, Avalara, Syteline/Infor: never configured.** Portal flows still on tfhcore (addresses, header search,
   email change, old cancel flow, token refresh) fail.
 - **Klaviyo, S3, mail: local fakes** (recorder, MinIO, Mailpit). tf-api's Mailgun mail is not sent.
-- **Builder.io: unreachable for now.** Read-only access (`cdn.builder.io` only) is approved; the change is in an open
-  tfh-local PR (`live/m4-builder`) and not live yet. Until then funnel Builder pages 404 and the portal uses overlays.
+- **Builder.io: read-only.** Only `cdn.builder.io` is reachable (`proxy/readonly-allowlist.txt`, fixed by preflight),
+  with public keys from `.env` (`LOCAL_BUILDER_PUBLIC_KEY_*`); Node apps refuse non-GET requests to it.
 - **Catalog data: placeholder.** A prod-like catalog seed needs a read-only DB credential (none on this machine).
 - Crons never run (`cron` profile refuses). Feature flags are seeded once, never toggled.
 

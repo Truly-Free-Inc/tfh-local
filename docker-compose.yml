@@ -199,6 +199,7 @@ services:
     restart: unless-stopped
     volumes:
       - ./proxy/allowlist.txt:/etc/tinyproxy/allowlist.txt:ro
+      - ./proxy/readonly-allowlist.txt:/etc/tinyproxy/readonly-allowlist.txt:ro
     networks: [internal, egress]
 
   # Host port publishing for services on the internal network (TCP passthrough, nginx stream).
@@ -394,10 +395,14 @@ services:
         overlay: ./docker/memberportal-overlay
     image: tfh-local/memberportal:local
     restart: unless-stopped
+    volumes:
+      - ./docker/node-egress-preload.cjs:/opt/tfh-local/node-egress-preload.cjs:ro
     # No memory cap: capped at 2-4 GB, next dev restarts itself or is OOM-killed while compiling /dashboard
     # after login. The admin panel and funnels are capped instead (Docker Desktop has ~8 GB for the whole stack).
     environment:
       <<: *proxy-env
+      # Server-side fetch through the egress proxy (Builder.io read-only); see docker/node-egress-preload.cjs.
+      NODE_OPTIONS: --require /opt/tfh-local/node-egress-preload.cjs
       NODE_ENV: development
       ENVIRONMENT: local
       NEXT_PUBLIC_ENVIRONMENT: local
@@ -410,9 +415,10 @@ services:
       MEMBER_PORTAL_BASE_URL: http://localhost:${MEMBERPORTAL_HOST_PORT:-13001}
       NEXT_PUBLIC_MEMBER_PORTAL_LOGIN_URL: http://localhost:${MEMBERPORTAL_HOST_PORT:-13001}/login
       NEXT_PUBLIC_COOKIE_DOMAIN: ""            # host-only cookies on localhost (default is .trulyfreehome.com)
-      # Placeholder (not a key): Builder SDK throws without one; with it, fetches fail fast (no egress) -> 404 component.
-      NEXT_PUBLIC_BUILDER_API_KEY: tfh-local-offline
-      NEXT_PUBLIC_FUNNEL_BUILDER_API_KEY: tfh-local-offline
+      # Builder.io PUBLIC keys (read-only content API via proxy/readonly-allowlist.txt), set in .env (gitignored).
+      # Unset -> placeholder: Builder SDK throws without a key; with it, fetches fail -> 404 component.
+      NEXT_PUBLIC_BUILDER_API_KEY: ${LOCAL_BUILDER_PUBLIC_KEY_PORTAL:-tfh-local-offline}
+      NEXT_PUBLIC_FUNNEL_BUILDER_API_KEY: ${LOCAL_BUILDER_PUBLIC_KEY_FUNNEL:-tfh-local-offline}
       KLAVIYO_BASE_URL: http://klaviyo-recorder:8090
       NEXT_PUBLIC_KLAVIYO_BASE_URL: http://localhost:${KLAVIYO_RECORDER_HOST_PORT:-18090}
       NEXT_PUBLIC_SENTRY_ENABLED: "false"
@@ -466,9 +472,11 @@ services:
     image: tfh-local/aff-landing-pages:local
     restart: unless-stopped
     mem_limit: 1500m
+    volumes:
+      - ./docker/node-egress-preload.cjs:/opt/tfh-local/node-egress-preload.cjs:ro
     environment:
       <<: *proxy-env
-      NODE_OPTIONS: --max-old-space-size=1024
+      NODE_OPTIONS: --max-old-space-size=1024 --require /opt/tfh-local/node-egress-preload.cjs
       NODE_ENV: development
       NEXT_PUBLIC_ENVIRONMENT: local
       TF_API_DOMAIN: http://tf-api:3000
@@ -478,9 +486,9 @@ services:
       NEXT_PUBLIC_HOST_NAME: localhost
       NEXT_PUBLIC_MEMBER_PORTAL_LOGIN_URL: http://localhost:${MEMBERPORTAL_HOST_PORT:-13001}/login
       CORS_ALLOWED_ORIGINS: http://localhost:${FUNNELS_HOST_PORT:-13003},http://localhost:${ADMIN_PANEL_HOST_PORT:-13002}
-      # Builder.io is unreachable offline (proxy denies all; preflight allows no allow-list entry in offline mode).
-      # Placeholder, not a key: Builder-backed pages (/, /offers/*, /info/*, /pages/*) 404 locally.
-      NEXT_PUBLIC_BUILDER_API_KEY: tfh-local-offline
+      # Builder.io PUBLIC key (read-only content API via proxy/readonly-allowlist.txt), set in .env (gitignored).
+      # Unset -> placeholder: Builder-backed pages (/, /offers/*, /info/*, /pages/*) 404 locally.
+      NEXT_PUBLIC_BUILDER_API_KEY: ${LOCAL_BUILDER_PUBLIC_KEY_FUNNEL:-tfh-local-offline}
       NEXT_PUBLIC_SENTRY_ENABLED: "false"
       SENTRY_ENABLED: "false"
       NEXT_PUBLIC_SENTRY_DSN: ""

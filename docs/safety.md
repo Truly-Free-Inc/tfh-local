@@ -33,12 +33,26 @@ Never copy real `STICKY_*` / `TF_COMPOSITION_*` values into `.env` while `EXTERN
 |---|---|---|
 | Preflight | `scripts/preflight.sh` (runs before `make up` and `make verify`) | `EXTERNALS=offline`: see above. `EXTERNALS=real`: refuses (exit 1) unless STICKY_DOMAIN and TF_COMPOSITION_API_BASE_URL hosts are set, match `safety/nonprod-hosts.txt` and match nothing in `safety/prod-denylist.txt`; no Syteline/Infor, tfhcore or Avalara variable is non-empty (in `.env` or your shell); DB host is the local `postgres` container; APP_ENV is not production; every `proxy/allowlist.txt` entry is non-prod. |
 | No direct internet | `docker-compose.yml` network `internal` (`internal: true`) | App containers cannot reach the internet at all. |
+| Read-only list | `proxy/readonly-allowlist.txt` | Builder.io content API (`cdn.builder.io`) only, approved by Michael 2026-11-19. Preflight refuses any entry not in its fixed `READONLY_APPROVED` set (both modes) or on the prod deny-list; Node apps refuse non-GET to it (scope below). Only public Builder keys are configured; preflight refuses any Builder private key. |
 | Egress allow-list | `proxy/` (tinyproxy, `FilterDefaultDeny Yes`) | The only way out. Empty in offline mode (denies everything; `make health` proves a denied request). Allows just the hosts in `proxy/allowlist.txt` (non-prod Sticky + TF). Everything else, including Klaviyo, AWS, and all prod hosts, is denied. |
 | Build vs runtime | | Image builds use the Docker daemon's network, so Go modules / Docker Hub / apt work at build time. Running containers never get that network. |
 | Host ports | `ingress` (nginx stream) | Publishes service ports on 127.0.0.1 only (non-default ports). |
 | Test-order check | `scripts/check-test-orders.sh` (runs in `make verify`) | Read-only query of the local DB: every order created since the run started must be a test order, or verify fails. |
 | Fakes | MinIO (S3), Klaviyo recorder, Mailpit | No real S3, Klaviyo or outbound mail. |
 | Secret scan | `scripts/check-no-secrets.sh` | Greps the repo for key/token/card patterns; `.env` and `apps/` must never be tracked. |
+
+## Scope of the Builder.io read-only (GET-only) rule
+- **The proxy allow-list is the real egress boundary.** It decides which *hosts* can be reached at all (default deny).
+  For HTTPS it only sees a `CONNECT cdn.builder.io:443` tunnel, so it **cannot** tell GET from POST.
+- The GET/HEAD/OPTIONS-only rule is enforced by `docker/node-egress-preload.cjs`, and **only for Node's global
+  `fetch` / undici** in the containers that load it (memberportal, aff-landing-pages). It does **not** cover Node's
+  `http`/`https` modules (or libraries built on them, e.g. axios), other runtimes, or **browsers** (a browser on the
+  host talks to `cdn.builder.io` directly, outside the proxy).
+- What keeps Builder read-only overall: only `cdn.builder.io` (the public content CDN) is allowed, never `builder.io`
+  or its write/admin API hosts (`make health` proves `builder.io` is denied); only *public* API keys are configured,
+  and preflight refuses `BUILDER_PRIVATE_KEY`-style variables and any `bpk-` value.
+- `make health` asserts the preload reports `ACTIVE` in each of those containers (it logs `[tfh-local egress-guard]
+  ACTIVE|INACTIVE` once at start). If it is INACTIVE, server-side fetch has no proxy and fails closed (offline).
 
 ## Never add to `proxy/allowlist.txt` or `safety/nonprod-hosts.txt`
 Any production host (see `safety/prod-denylist.txt`), Klaviyo, AWS/S3, Syteline/Infor, tfhcore, Avalara,
