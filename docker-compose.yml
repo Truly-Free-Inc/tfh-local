@@ -397,12 +397,16 @@ services:
     restart: unless-stopped
     volumes:
       - ./docker/node-egress-preload.cjs:/opt/tfh-local/node-egress-preload.cjs:ro
-    # No memory cap: capped at 2-4 GB, next dev restarts itself or is OOM-killed while compiling /dashboard
-    # after login. The admin panel and funnels are capped instead (Docker Desktop has ~8 GB for the whole stack).
+    # Memory (root cause, M5a): uncapped, next dev's `next-server` child grew to ~5 GB RSS under the 4-worker gate
+    # and the Docker VM's *global* OOM killer took it (and could pick other containers). The child is not PID 1, so
+    # Docker never reported OOMKilled; `next dev` exited 0 and restart: unless-stopped brought it back.
+    # Now: a cgroup limit (an OOM stays inside this container) paired with a V8 heap cap well below it (headroom for
+    # SWC/webpack native memory), so V8 collects harder before the kernel steps in. Needs Docker Desktop >= 12 GB.
+    mem_limit: ${MEMBERPORTAL_MEM_LIMIT:-5g}
     environment:
       <<: *proxy-env
-      # Server-side fetch through the egress proxy (Builder.io read-only); see docker/node-egress-preload.cjs.
-      NODE_OPTIONS: --require /opt/tfh-local/node-egress-preload.cjs
+      # Heap cap + server-side fetch through the egress proxy (Builder.io read-only); see docker/node-egress-preload.cjs.
+      NODE_OPTIONS: --max-old-space-size=${MEMBERPORTAL_HEAP_MB:-3072} --require /opt/tfh-local/node-egress-preload.cjs
       NODE_ENV: development
       ENVIRONMENT: local
       NEXT_PUBLIC_ENVIRONMENT: local
@@ -471,12 +475,15 @@ services:
       dockerfile: ../../docker/next-dev.Dockerfile
     image: tfh-local/aff-landing-pages:local
     restart: unless-stopped
-    mem_limit: 1500m
+    # Memory (root cause, M5a): at 1500m with a 1024 MB heap, next dev's `next-server` child hit ~1.35 GB RSS
+    # (heap + SWC/webpack native memory) and was cgroup-OOM-killed 5x under the gate (exit 0, not flagged OOMKilled).
+    # Limit ~1.5x the heap cap leaves room for native memory.
+    mem_limit: ${FUNNELS_MEM_LIMIT:-3g}
     volumes:
       - ./docker/node-egress-preload.cjs:/opt/tfh-local/node-egress-preload.cjs:ro
     environment:
       <<: *proxy-env
-      NODE_OPTIONS: --max-old-space-size=1024 --require /opt/tfh-local/node-egress-preload.cjs
+      NODE_OPTIONS: --max-old-space-size=${FUNNELS_HEAP_MB:-2048} --require /opt/tfh-local/node-egress-preload.cjs
       NODE_ENV: development
       NEXT_PUBLIC_ENVIRONMENT: local
       TF_API_DOMAIN: http://tf-api:3000
