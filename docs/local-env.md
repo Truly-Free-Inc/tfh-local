@@ -97,7 +97,7 @@ Gate tag: `@gate` (`npm run test:gate` = `--grep @gate --grep-invert @quarantine
 - Login-time Sticky calls fail in milliseconds (offline). `login_order_sync_enabled` has no flag row locally, so sync is skipped.
 - `next dev` hydrates late: fill the login form after `load` (see `scripts/prove-portal-login.cjs`). First hit of each
   route compiles it (~20-30 s).
-- Offline failures (expected): Builder.io pages other than `/login` and `/dashboard` (overlays), the dashboard sidebar
+- Offline failures (expected): the dashboard sidebar
   (Builder symbol), Google login, Google Fonts (fallback font), GTM/Yotpo/referral scripts, portal CloudWatch
   logger (defaults to a remote develop host; DNS fails, nothing leaves), OTEL trace proxy (500, harmless), and every
   tfhcore-backed flow (addresses, header search, logger, email change, old cancel flow, token refresh).

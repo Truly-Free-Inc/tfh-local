@@ -388,13 +388,11 @@ services:
 
   # ---------------------------------------------------------------- memberportal (M2)
   # `next dev` image (docker/memberportal.Dockerfile). Points ONLY at local tf-api. tfhcore URLs are never set.
-  # Builder.io is unreachable offline: a local /login overlay renders the real LoginForm; Builder pages 404.
+  # Builder pages (/login, /dashboard, ...) render from Builder.io via the read-only egress (cdn.builder.io, GET only).
   memberportal:
     build:
       context: ./apps/memberportal
       dockerfile: ../../docker/memberportal.Dockerfile
-      additional_contexts:
-        overlay: ./docker/memberportal-overlay
     image: tfh-local/memberportal:local
     restart: unless-stopped
     volumes:
