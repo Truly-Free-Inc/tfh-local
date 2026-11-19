@@ -32,9 +32,31 @@ else red "not answering: memberportal /login"; fail=1; fi
 # Admin panel + funnels also run `next dev` (first compile is slow).
 probe_slow() { if curl -sS -m 120 -o /dev/null -w '%{http_code}' "$2" | grep -qE '^(200|30[0-9])$'; then echo "ok: $1 $2"; else red "not answering: $1 $2"; fail=1; fi; }
 probe_slow admin-panel "http://127.0.0.1:${ADMIN_PANEL_HOST_PORT:-13002}/login"
+probe_slow storefront "http://127.0.0.1:${STOREFRONT_HOST_PORT:-13005}/api/healthz"
 probe_slow funnels     "http://127.0.0.1:${FUNNELS_HOST_PORT:-13003}/internal_admin/login"
 if [ -n "$(dc ps -q vector-search 2>/dev/null)" ]; then probe vector-search "http://127.0.0.1:${VECTOR_SEARCH_HOST_PORT:-18077}/"; fi
-# Egress must stay locked: the proxy must refuse a host that is not on the allow-list.
-code="$(dc exec -T tf-api bash -c 'exec 3<>/dev/tcp/proxy/8888 && printf "GET http://a.klaviyo.com/ HTTP/1.0\r\nHost: a.klaviyo.com\r\n\r\n" >&3 && head -1 <&3' 2>/dev/null | awk '{print $2}' || true)"
-case "$code" in 403) echo "ok: proxy denies non-allow-listed host (a.klaviyo.com -> $code)" ;; *) red "proxy did NOT deny a.klaviyo.com (got '${code:-no response}')"; fail=1 ;; esac
+# Egress must stay locked: DENY for prod/Sticky/Klaviyo/Mailgun/Avalara/tfhcore/builder.io root, ALLOW only the
+# approved read-only hosts (see scripts/egress-check.sh).
+"$ROOT/scripts/egress-check.sh" || fail=1
+# Node egress guard (docker/node-egress-preload.cjs) must be ACTIVE in every container that loads it, i.e. it found the
+# app's undici. A node process started with the container's NODE_OPTIONS reports the state the dev server got.
+for s in memberportal aff-landing-pages; do
+  gs="$(dc exec -T "$s" node -e 'process.stdout.write(String(globalThis.__TFH_EGRESS_GUARD||"NOT LOADED"))' 2>/dev/null | tail -1 || true)"
+  if [ "$gs" = ACTIVE ]; then echo "ok: egress guard ACTIVE in $s"; else red "egress guard not active in $s (got '${gs:-no response}')"; fail=1; fi
+done
+# Builder.io read-only (proxy/readonly-allowlist.txt): egress-check.sh probes the proxy (builder.io/api.builder.io
+# 403, cdn.builder.io 200). End to end from a Node app: GET to cdn.builder.io works via the guard + proxy; POST is
+# refused locally by the guard.
+if [ -s "$ROOT/proxy/readonly-allowlist.txt" ] && grep -q 'cdn' "$ROOT/proxy/readonly-allowlist.txt"; then
+  r="$(dc exec -T memberportal node -e '
+    const u="https://cdn.builder.io/";
+    (async () => {
+      let get, post;
+      try { get = "status " + (await fetch(u, { method: "GET", redirect: "manual" })).status; } catch (e) { get = "ERR " + (e.cause && e.cause.message || e.message); }
+      try { post = "status " + (await fetch(u, { method: "POST", body: "x" })).status; } catch (e) { post = "ERR " + (e.cause && e.cause.message || e.message); }
+      console.log("GET=" + get + "|POST=" + post);
+    })();' 2>/dev/null | tail -1 || true)"
+  case "$r" in "GET=status "*"|POST=ERR "*refused*) echo "ok: memberportal fetch cdn.builder.io GET allowed, POST refused ($r)" ;;
+    *) red "memberportal Builder read-only check failed ($r)"; fail=1 ;; esac
+fi
 [ $fail -eq 0 ] && grn "health: OK" || { red "health: FAILED"; exit 1; }

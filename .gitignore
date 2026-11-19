@@ -5,6 +5,8 @@ apps/
 # Secrets and local overrides
 .env
 *.local
+# Named internal prod hosts (never commit; this repo is public)
+safety/*.local.txt
 .env.*
 !.env.example
 # Data volumes / recorder output

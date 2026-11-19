@@ -34,5 +34,17 @@ done <<< "$files"
 # Never commit these.
 git ls-files --error-unmatch .env >/dev/null 2>&1 && { red ".env is tracked!"; hits=1; }
 git ls-files | grep -qE '^apps/' && { red "apps/ is tracked!"; hits=1; }
+# gitleaks (if installed; `brew install gitleaks`): full committed history + staged changes, redacted output.
+# CI runs it on every PR (.github/workflows/gitleaks.yml), so a missing local binary is a warning, not a pass.
+if [ "${SKIP_GITLEAKS:-0}" != "1" ]; then
+  if command -v gitleaks >/dev/null 2>&1; then
+    gitleaks git --config "$ROOT/.gitleaks.toml" --redact --no-banner --log-level warn --exit-code 1 "$ROOT" \
+      || { red "gitleaks: leaks in git history (see above; values redacted)"; hits=1; }
+    gitleaks git --pre-commit --staged --config "$ROOT/.gitleaks.toml" --redact --no-banner --log-level warn --exit-code 1 "$ROOT" \
+      || { red "gitleaks: leaks in staged changes"; hits=1; }
+  else
+    ylw "gitleaks not installed (brew install gitleaks); ran the built-in patterns only. CI runs gitleaks on PRs."
+  fi
+fi
 [ "$hits" -eq 0 ] || { red "check-no-secrets: FAILED"; exit 1; }
 grn "check-no-secrets: OK"

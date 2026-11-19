@@ -12,7 +12,8 @@ same ticket branch, verify everything locally (including the core gate), then op
 - **Never change feature flags** (seeded once at first DB init).
 - **No secrets in git.** `.env.example` = names only. Run `make check-secrets` before every commit.
 - **`scripts/preflight.sh` runs before `make up` / `make verify` and refuses** on any violation. Do not bypass it.
-- App containers have **no direct internet**; egress only through an allow-list proxy (non-prod Sticky + TF only).
+- App containers have **no direct internet**; egress only through an allow-list proxy (non-prod Sticky + TF only,
+  empty offline) plus a fixed read-only list (`cdn.builder.io`, approved by Michael 2026-11-19).
 - **AI opens PRs, never merges.**
 
 Details: [docs/safety.md](docs/safety.md).
@@ -34,6 +35,7 @@ plus `npm ci` (Playwright browsers: `npx playwright install webkit chromium fire
 | Member portal | http://localhost:13001/login |
 | Admin panel (staff login via funnels `/internal_admin/login`, Kratos) | http://localhost:13002 |
 | Funnels (aff-landing-pages) | http://localhost:13003 |
+| Storefront (funnels app; stage/prod storefront host) | http://localhost:13005 |
 | tf-api | http://localhost:13000/health |
 | tf-apigateway | http://localhost:13004/health |
 | Kratos public | http://localhost:14433 |
@@ -54,9 +56,9 @@ What is offline, and why:
 - **tfhcore, Avalara, Syteline/Infor: never configured.** Portal flows still on tfhcore (addresses, header search,
   email change, old cancel flow, token refresh) fail.
 - **Klaviyo, S3, mail: local fakes** (recorder, MinIO, Mailpit). tf-api's Mailgun mail is not sent.
-- **Builder.io: unreachable for now.** Read-only access (`cdn.builder.io` only) is approved; the change is in an open
-  tfh-local PR (`live/m4-builder`) and not live yet. Until then funnel Builder pages 404 and the portal uses overlays.
-- **Catalog data: placeholder.** A prod-like catalog seed needs a read-only DB credential (none on this machine).
+- **Builder.io: read-only.** Only `cdn.builder.io` is reachable (`proxy/readonly-allowlist.txt`, fixed by preflight),
+  with public keys from `.env` (`LOCAL_BUILDER_PUBLIC_KEY_*`); Node apps refuse non-GET requests to it.
+- **Catalog data: optional, never in git.** `make seed-catalog` loads a catalog export (definition tables only) kept in the gitignored `.state/catalog-export/`, after a customer/order data scan of every column and value (see `seed/catalog/README.md`).
 - Crons never run (`cron` profile refuses). Feature flags are seeded once, never toggled.
 
 ## Quick start
@@ -98,7 +100,7 @@ AI per-ticket instructions: [docs/ai-loop.md](docs/ai-loop.md). Suite env: [docs
 | ingress | wired | nginx stream; publishes ports on 127.0.0.1. |
 | mailpit, minio + minio-init, klaviyo-recorder | **live** | Mailpit UI `:18025`, MinIO API `:19000` / console `:19001` (`pgsty/minio` community fork; upstream images are gone), recorder `:18090`. |
 | tf-apigateway, kratos, keto, gateway-postgres | **live** | Gateway `:13004/health`; Kratos public `:14433` (admin `:14434`, loopback); Keto internal. Mirrors the gateway repo's compose; Kratos config `auth/kratos/kratos.yml` (localhost URLs, Google off, courier -> Mailpit). |
-| memberportal | **live** (`next dev`) | `http://localhost:13001/login`. Points only at local tf-api. Builder.io is unreachable offline: tfh-local overlays `/login` and `/dashboard` with the portal's own LoginForm / "Dashboard Page Content" components (`docker/memberportal-overlay/`); other Builder pages fail. |
+| memberportal | **live** (`next dev`) | `http://localhost:13001/login`. Points only at local tf-api. Builder pages (`/login`, `/dashboard`, `/subscriptions`, ...) render real content from Builder.io via the read-only egress (cdn.builder.io, GET only); no local overlays. |
 | auth users | **seeded** | `make seed-auth` (also run by `make up`): "test test" portal customer (tf-api DB + Kratos) and a local admin (Kratos, Keto role `admin`). Credentials in `.env`. `make prove-login` = headless login proof. |
 | admin-panel | **live** (`next dev`) | `http://localhost:13002`. Local tf-api / gateway / Kratos only. Staff login goes through the funnels app's `/internal_admin/login` (Kratos). |
 | aff-landing-pages (funnels) | **live** (`next dev`) | `http://localhost:13003`. Builder.io pages (`/`, `/offers/*`, `/info/*`, `/pages/*`) 404 offline (Builder unreachable; no allow-list entry in offline mode). Checkout needs Sticky/TF: fails offline. |

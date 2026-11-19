@@ -5,10 +5,21 @@ catalog pages have realistic products, offers, Builder placements, coupons, upse
 
 - **Data is never committed.** It lives in `.state/catalog-export/data/<table>.json` (gitignored; the script refuses
   to run if that path is not ignored). One JSON array of row objects per table.
-- **Allow-list only.** 74 definition tables (products, offers, offer_* joins, images, tags, categories, coupons and
-  promo-code *definitions*, campaigns, upsell flows, cancellation reasons, sitemap_entries...). Never customers,
-  orders, subscriptions, carts, internal users, redemptions or `feature_flags`. Audit columns pointing at staff
-  (`created_by`) are stripped at export time. Tables with any customer linkage are dropped from the export.
+- **Customer/order data scan, every load.** `seed/catalog/pii_scan.py` runs before anything is loaded and judges the
+  export by its DATA, not by table names. It scans every column and every value (including keys and values nested in
+  JSON columns) for customer data (emails, phones, person names, postal addresses, card-like numbers, SSNs, ids that
+  point at a person) and order data (order / transaction / charge / subscription / cart ids, order totals, line items,
+  shipping and tracking info, "order #" references). A table whose rows carry a populated person-id or order-id
+  column is EXCLUDED (loaded as empty); any other column with a hit is DROPPED from every row. Only the cleaned copy
+  (`.state/catalog-clean/`, gitignored) is loaded. Output is metadata only (table / column / detector / count; never
+  values) in `.state/catalog-clean/SCAN.json`. Tuned to not flag catalog fields (SKUs, product prices,
+  `sort_order`, `order_bump_*` config, company role mailboxes like support@, toll-free numbers, image URLs).
+  `tests/test-catalog-pii-scan.sh` covers it with synthetic fixtures.
+- **Definition tables only at export time.** The export itself is limited to catalog definition tables (products,
+  offers, offer_* joins, images, tags, categories, coupons and promo-code *definitions*, campaigns, upsell flows,
+  cancellation reasons, sitemap_entries...) and staff audit columns (`created_by`...) are stripped; the scan above is
+  the enforcement, so a mistake in the export list still cannot load customer or order data. `feature_flags` is never
+  exported.
 - **Local only.** The script runs `psql` inside the compose `postgres` container; `load.sql` also refuses a
   non-local/non-private server address.
 - `CATALOG_MODE=replace` (default): one transaction, delete the allow-listed tables in reverse FK order, insert in FK

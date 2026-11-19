@@ -3,7 +3,7 @@ SHELL := /bin/bash
 .DEFAULT_GOAL := help
 export KEY BRANCH CONFIRM LOCAL_SRC REFRESH VECTOR
 
-.PHONY: help bootstrap refresh ticket up down health logs verify status pr reset preflight check-secrets config seed-auth prove-login prove-admin seed-catalog
+.PHONY: help bootstrap refresh ticket up down health logs verify status pr reset preflight check-secrets config test seed-auth prove-login prove-admin seed-catalog
 
 help: ## list targets
 	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  %-14s %s\n", $$1, $$2}'
@@ -25,6 +25,9 @@ up: ## preflight, then build + start core services
 
 down: ## stop the stack (keeps volumes)
 	@docker compose --profile stub --profile vector --profile cron down
+
+warmup: ## compile the gate's next dev routes serially (also run by up and verify)
+	@scripts/warmup.sh
 
 health: ## core containers, one-shot jobs, tf-api /health, Mailpit, MinIO, proxy deny check
 	@scripts/health.sh
@@ -52,6 +55,9 @@ pr: ## KEY=... [CONFIRM=1] dry-run by default; push + open PRs (never lands them
 
 reset: ## CONFIRM=1 delete LOCAL volumes only
 	@scripts/reset.sh
+
+test: ## run the shell tests in tests/ (no network; sandbox copies + dummy env only)
+	@set -e; for t in tests/test-*.sh; do bash "$$t"; done
 
 check-secrets: ## scan this repo for secrets (run before every commit)
 	@scripts/check-no-secrets.sh

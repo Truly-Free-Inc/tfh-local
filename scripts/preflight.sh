@@ -14,12 +14,32 @@ load_env
 
 NONPROD="$ROOT/safety/nonprod-hosts.txt"
 DENY="$ROOT/safety/prod-denylist.txt"
+# Optional gitignored extra deny list (named internal hosts kept out of the public repo). Enforced the same way.
+DENY_LOCAL="$ROOT/safety/prod-denylist.local.txt"
+if [ -f "$DENY_LOCAL" ]; then
+  DENY_ALL="$(mktemp)"; trap 'rm -f "$DENY_ALL"' EXIT
+  cat "$DENY" "$DENY_LOCAL" > "$DENY_ALL"; DENY_FILES=("$DENY" "$DENY_LOCAL"); DENY="$DENY_ALL"
+else
+  DENY_FILES=("$DENY")
+fi
 ALLOW="$ROOT/proxy/allowlist.txt"
+# Read-only third-party content hosts (Builder.io). Separate from the Sticky/TF allow-list; fixed approved set.
+READONLY="$ROOT/proxy/readonly-allowlist.txt"
+READONLY_APPROVED='^cdn\.builder\.io$'
 
 matches() { # matches <host> <patternfile>
   local pats; pats="$(patterns "$2")"; [ -n "$pats" ] || return 1
   printf '%s\n' "$1" | grep -Eiq -f <(printf '%s\n' "$pats")
 }
+
+# 0a. Pattern hygiene: every regex in the deny list, the egress allow-lists and the non-prod list must be
+#     ^...$ anchored with escaped dots (see lib.sh pattern_anchored). Applies in both EXTERNALS modes.
+for pf in "${DENY_FILES[@]}" "$ALLOW" "$NONPROD" "$ROOT/proxy/readonly-allowlist.txt"; do
+  [ -f "$pf" ] || continue
+  while IFS= read -r pat; do
+    pattern_anchored "$pat" || bad "${pf#$ROOT/} entry '$pat' is not anchored (^...\$) with escaped dots"
+  done < <(patterns "$pf")
+done
 
 # 0. EXTERNALS mode. offline (default) = Sticky/TF must be impossible to reach; real = non-prod hosts via the proxy.
 EXTERNALS="$(printf '%s' "${EXTERNALS:-offline}" | tr '[:upper:]' '[:lower:]')"
@@ -41,8 +61,8 @@ if [ "$EXTERNALS" = "offline" ]; then
   # safety/nonprod-hosts.txt must be unchanged from the committed version and carry no entries.
   [ -z "$(patterns "$NONPROD")" ] || bad "safety/nonprod-hosts.txt has entries. EXTERNALS=offline requires none."
   if git -C "$ROOT" rev-parse --git-dir >/dev/null 2>&1; then
-    git -C "$ROOT" diff --quiet HEAD -- safety/nonprod-hosts.txt proxy/allowlist.txt \
-      || bad "safety/nonprod-hosts.txt or proxy/allowlist.txt has uncommitted changes. EXTERNALS=offline requires them unchanged."
+    git -C "$ROOT" diff --quiet HEAD -- safety/nonprod-hosts.txt proxy/allowlist.txt proxy/readonly-allowlist.txt \
+      || bad "safety/nonprod-hosts.txt, proxy/allowlist.txt or proxy/readonly-allowlist.txt has uncommitted changes. EXTERNALS=offline requires them unchanged."
   fi
 else
   # 1. Sticky + TF hosts: set, on the non-prod allow-list, not on the prod deny-list.
@@ -63,6 +83,16 @@ else
   done < <(patterns "$ALLOW")
 fi
 
+# 5b. Read-only list (both modes): every entry must be EXACTLY one of READONLY_APPROVED and miss the prod deny-list.
+#     Sticky/TF/Klaviyo/AWS/prod hosts can never be routed through it.
+if [ -f "$READONLY" ]; then
+  while IFS= read -r pat; do
+    printf '%s\n' "$READONLY_APPROVED" | grep -qxF -- "$pat" || bad "proxy/readonly-allowlist.txt entry '$pat' is not an approved read-only host (scripts/preflight.sh READONLY_APPROVED)"
+    lit="$(printf '%s' "$pat" | sed -E 's/^\^//; s/\$$//; s/\\\././g')"
+    matches "$lit" "$DENY" && bad "proxy/readonly-allowlist.txt entry '$pat' matches the prod deny-list"
+  done < <(patterns "$READONLY")
+fi
+
 # 2. Forbidden integrations: must be empty/absent in .env AND in the calling shell.
 while IFS='=' read -r k v; do
   [ -n "$v" ] || continue
@@ -72,6 +102,16 @@ while IFS='=' read -r k v; do
     AVALARA*)                    bad "$k is set. Avalara is OUT." ;;
   esac
 done < <(env)
+
+# 2b. Builder.io stays read-only: only PUBLIC API keys. Refuse any Builder private/write key (by name, in .env and the
+#     calling shell) and any value with the Builder private-key prefix 'bpk-' (whatever the variable is called).
+while IFS='=' read -r k v; do
+  [ -n "$v" ] || continue
+  case "$k" in
+    *BUILDER*PRIVATE*|*BUILDER*SECRET*|*BUILDER*WRITE*|*BUILDER*ADMIN*) bad "$k is set. Only public Builder.io keys are allowed (read-only)." ;;
+  esac
+  case "$v" in bpk-*|\"bpk-*|\'bpk-*) bad "$k holds a Builder.io private key (bpk-...). Only public keys are allowed." ;; esac
+done < <(env; printf '%s\n' "$CALLER_ENV")
 
 # 3. DB host must be the local container.
 if [ -n "${DB_HOST:-}" ] && [ "$DB_HOST" != "postgres" ]; then
@@ -89,6 +129,8 @@ if command -v docker >/dev/null 2>&1; then
   if [ -n "$cfg" ]; then
     printf '%s' "$cfg" | grep -Eq '(SYTE_?LINE|SYTELINE|INFOR_|TFH_?CORE|TFHCORE|AVALARA)[A-Z_]*:' \
       && bad "docker compose config contains a forbidden variable (Syteline/Infor/tfhcore/Avalara)"
+    printf '%s' "$cfg" | grep -Eq '(BUILDER[A-Z_]*(PRIVATE|SECRET|WRITE|ADMIN)[A-Z_]*: *[^ ]|: *"?bpk-)' \
+      && bad "docker compose config carries a Builder.io private key (variable name or bpk- value)"
     if [ "$EXTERNALS" = "offline" ]; then
       # Compose resolves shell env over .env, so check what the containers would actually get.
       while IFS= read -r line; do

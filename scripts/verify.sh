@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # make verify KEY=TFHFUNNEL-1234   (or plain `make verify`: core gate only)
 # preflight -> stack health -> tfh-automation on the HOST against the local stack:
-#   1) the ticket's tests:  --grep @KEY   (must exist; Playwright exits non-zero if none match; skipped without KEY)
+#   1) the ticket's tests:  --grep '@KEY(?![0-9])'  (whole key: @X-12 never selects @X-123; must exist; Playwright exits non-zero if none match; skipped without KEY)
 #   2) the core gate:       --grep @gate --grep-invert @quarantine   (same as `npm run test:gate`)
 # -> scripts/check-test-orders.sh -> .state/runs/<KEY>-<ts>/summary.md + reports. Exit non-zero if red.
 # The suite's test-order guard (lib/test-order-guard.ts) is used as-is. Never edit or widen it.
@@ -27,8 +27,11 @@ RUN="$STATE/runs/$LABEL-$TS"; mkdir -p "$RUN"
 SHAS="$(repo_shas_json)"
 
 # Local suite credentials: the only portal user locally is the seeded "test test" customer (.env). Workers and the
-# wall-clock cap are tunable: VERIFY_WORKERS (default 4), VERIFY_MAX_SECONDS (default 1500 = 25 min).
-WORKERS="${VERIFY_WORKERS:-4}"; MAXS="${VERIFY_MAX_SECONDS:-1500}"
+# wall-clock cap are tunable: VERIFY_WORKERS (default 2), VERIFY_MAX_SECONDS (default 1500 = 25 min).
+# 2 workers (was 4): the portal/funnels run `next dev`; more workers = more parallel route compiles = OOM restarts.
+# Routes are pre-compiled serially first (scripts/warmup.sh).
+"$ROOT/scripts/warmup.sh" >/dev/null 2>&1 || true
+WORKERS="${VERIFY_WORKERS:-2}"; MAXS="${VERIFY_MAX_SECONDS:-1500}"
 run_suite() { # label grep [grep-invert]
   local label="$1" grep="$2" inv="${3:-}" args
   args=(playwright test --grep "$grep" --retries 0 --workers "$WORKERS" --reporter=list,html,json --output "$RUN/$label/test-results")
@@ -42,7 +45,7 @@ run_suite() { # label grep [grep-invert]
 
 mkdir -p "$RUN/ticket" "$RUN/gate"
 set +e
-if [ -n "${KEY:-}" ]; then run_suite ticket "@$KEY"; T=$?; else T=0; fi
+if [ -n "${KEY:-}" ]; then run_suite ticket "$(key_grep "$KEY")"; T=$?; else T=0; fi
 run_suite gate   "@gate" "@quarantine"; G=$?
 "$ROOT/scripts/check-test-orders.sh" "$START" > "$RUN/test-orders.log" 2>&1; O=$?
 set -e
