@@ -23,17 +23,14 @@ Enforcement (**to be built**): a script diffs the PR against develop and fails i
 ## 3. Merge rule
 Decision (Michael): AI may merge once proper checks and guards are in place. Rule: AI may merge into develop only when **all required checks pass, the scope guard is green, and the branch is up to date with develop**. Anything else stays open for a human. The guard and the checks must exist and be required before AI merge is turned on. Promotion from develop to main is batched.
 
-## 4. Full-suite runs (under discussion)
-Proposal only, not agreed. Michael asked to discuss it.
-
-- **Per-ticket runs stay local, then develop,** with the ticket's tests plus the core gate. Develop holds many branches that never get promoted, so a full-suite run there says little about what will ship.
-- **Proposed: run the full suite on stage,** where code that is actually being promoted lives.
-- If a test fails on stage and passes on rerun, it goes into **quarantine**: a tag that stops it blocking merges while it is fixed. It gets a Jira ticket and a fix deadline.
-- Promoting to main would need a clean stage full run: zero failures and zero flaky reruns.
+## 4. How suite runs work (agreed direction)
+1. **Standard suite = regression + core.** Ticket and feature tests are excluded from it.
+2. **When a branch merges to an environment (develop, stage),** the run is the standard suite plus **that branch's own feature tests only**.
+3. **Ticket tests join regression later** through a QA promotion process, probably after release. This is an open topic to brainstorm: who approves, when, and how tags change.
+4. **Quarantine (proposal):** a test that fails and passes on rerun is tagged to stop blocking merges while it is fixed, with a Jira ticket and a fix deadline.
 
 ## 5. Open items
 - Back-to-back count: 3 or 5.
-- Where the full suite runs: stage is proposed (to discuss).
-- When the stage full run happens: on each promotion, nightly, or before a prod release.
 - Fix deadline length for quarantined tests.
 - Who owns the quarantine tickets.
+- QA promotion of feature tests into regression (timing, owner, mechanics).
