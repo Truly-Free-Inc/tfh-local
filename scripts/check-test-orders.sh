@@ -41,7 +41,7 @@ WHERE created_at >= '$since'::timestamptz
     OR $(is_test_name billing_first_name billing_last_name)
     OR trim(coalesce(external_gateway_id,'')) IN ('1','3','7','8','11','12','14')
   );")"
-by_type="$(q "SELECT $TYPE_COL || '=' || count(*) FROM public.sticky_orders WHERE created_at >= '$since'::timestamptz GROUP BY 1 ORDER BY 1;" | paste -sd, -)"
+by_type="$(q "SELECT $TYPE_COL || '=' || count(*) FROM public.sticky_orders WHERE created_at >= '$since'::timestamptz GROUP BY $TYPE_COL ORDER BY $TYPE_COL;" | paste -sd, -)"
 report+=("sticky_orders since $since: ${by_type:-0}")
 if [ -n "$bad" ]; then
   red "TEST-ORDER CHECK FAILED: non-test sticky_orders rows (id | type | sticky id | tf order id | gateway | is_test_order):"

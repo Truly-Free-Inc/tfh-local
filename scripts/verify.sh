@@ -13,6 +13,8 @@ SUITE="$APPS/tfh-automation"
 [ -d "$SUITE/node_modules" ] || die "suite deps missing: (cd apps/tfh-automation && npm ci && npx playwright install webkit)"
 
 "$ROOT/scripts/preflight.sh"
+# Wait for the apps (prod-mode builds) and warm routes before health probes them.
+"$ROOT/scripts/warmup.sh" >/dev/null 2>&1 || true
 "$ROOT/scripts/health.sh"
 
 # Env selection: tfh-automation picks the env from TARGET_ENV (config/envs.ts). It accepts dev|stage|prod
@@ -28,16 +30,19 @@ SHAS="$(repo_shas_json)"
 
 # Local suite credentials: the only portal user locally is the seeded "test test" customer (.env). Workers and the
 # wall-clock cap are tunable: VERIFY_WORKERS (default 2), VERIFY_MAX_SECONDS (default 1500 = 25 min).
-# 2 workers (was 4): the portal/funnels run `next dev`; more workers = more parallel route compiles = OOM restarts.
-# Routes are pre-compiled serially first (scripts/warmup.sh).
-"$ROOT/scripts/warmup.sh" >/dev/null 2>&1 || true
+# 2 workers (was 4): with LOCAL_APP_MODE=dev the portal/funnels run `next dev` (parallel route compiles = OOM
+# restarts). Routes are warmed serially first (scripts/warmup.sh; in prod mode it also waits for the builds).
 WORKERS="${VERIFY_WORKERS:-2}"; MAXS="${VERIFY_MAX_SECONDS:-1500}"
 run_suite() { # label grep [grep-invert]
   local label="$1" grep="$2" inv="${3:-}" args
   args=(playwright test --grep "$grep" --retries 0 --workers "$WORKERS" --reporter=list,html,json --output "$RUN/$label/test-results")
   [ -n "$inv" ] && args+=(--grep-invert "$inv")
-  ( cd "$SUITE" && env TARGET_ENV=local TZ=UTC TFR_RETRIES=0 \
-      MEMBER_PORTAL_USER="${TEST_CUSTOMER_PORTAL_EMAIL:-}" MEMBER_PORTAL_PASSWORD="${TEST_CUSTOMER_PORTAL_PASSWORD:-}" \
+  # Credentials are exported (shell builtin), not passed as `env NAME=value` argv (visible in `ps`).
+  ( cd "$SUITE" && export MEMBER_PORTAL_USER="${TEST_CUSTOMER_PORTAL_EMAIL:-}" \
+      MEMBER_PORTAL_PASSWORD="${TEST_CUSTOMER_PORTAL_PASSWORD:-}" \
+      TF_API_BASIC_AUTH="${TF_API_BASIC_AUTH_USERNAME:-}:${TF_API_BASIC_AUTH_PASSWORD:-}" \
+      BUILDER_PUBLIC_API_KEY="${LOCAL_BUILDER_PUBLIC_KEY_FUNNEL:-}" && \
+    env TARGET_ENV=local TZ=UTC TFR_RETRIES=0 \
       PLAYWRIGHT_HTML_OUTPUT_DIR="$RUN/$label/html" PLAYWRIGHT_HTML_REPORT="$RUN/$label/html" PLAYWRIGHT_HTML_OPEN=never \
       PLAYWRIGHT_JSON_OUTPUT_NAME="$RUN/$label/results.json" \
       perl -e 'alarm shift; exec @ARGV' "$MAXS" npx "${args[@]}" ) > "$RUN/$label.log" 2>&1

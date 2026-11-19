@@ -19,7 +19,7 @@ fi
 while read -r name _; do mkdir -p "$SB/apps/$name"; done < <(ROOT="$SB" repos)
 out="$(bash "$SB/scripts/bootstrap.sh" 2>&1 </dev/null)"; rc=$?
 expect_true "bootstrap exits 0 (rc=$rc)" [ $rc -eq 0 ]
-for v in $CREDS TEST_CUSTOMER_PORTAL_PASSWORD LOCAL_ADMIN_PASSWORD; do
+for v in $CREDS TEST_CUSTOMER_PORTAL_PASSWORD LOCAL_ADMIN_PASSWORD TF_API_BASIC_AUTH_PASSWORD; do
   val="$(grep -E "^$v=" "$SB/.env" | cut -d= -f2-)"
   expect_true "bootstrap filled $v" [ -n "$val" ]
   case "$v" in *USER) ;; *) expect_false "$v value not printed" grep -qF -- "$val" <<<"$out" ;; esac

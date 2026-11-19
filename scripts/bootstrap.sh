@@ -87,6 +87,10 @@ fill TEST_CUSTOMER_PORTAL_EMAIL    0 lit test@tfh-local.test
 fill TEST_CUSTOMER_PORTAL_PASSWORD 0 rnd 16
 fill LOCAL_ADMIN_EMAIL             0 lit admin@tfh-local.test
 fill LOCAL_ADMIN_PASSWORD          0 rnd 16
+# tf-api HTTP Basic auth (BASIC_AUTH_ENABLED=true locally): server-to-server creds for memberportal/admin/funnels and
+# the suite's local env. Local-only generated values, not any real environment's.
+fill TF_API_BASIC_AUTH_USERNAME    0 lit tfh-local-api
+fill TF_API_BASIC_AUTH_PASSWORD    0 rnd 24
 [ ${#gen[@]} -eq 0 ] || ylw "generated local values in .env for: ${gen[*]} (values not shown)"
 [ ${#skipped[@]} -eq 0 ] || ylw "NOT generated (data volumes for '$proj' exist; set them to the values the volumes were created with, or make reset CONFIRM=1): ${skipped[*]}"
 grn "bootstrap: done"

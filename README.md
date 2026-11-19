@@ -21,7 +21,7 @@ Details: [docs/safety.md](docs/safety.md).
 ## Start here tonight
 ```bash
 make bootstrap LOCAL_SRC=~/projects   # git worktrees of your clones into apps/ (never touches ~/projects/<repo>)
-make up                               # preflight + build + start + health (first `next dev` compile per page ~20-30 s)
+make up                               # preflight + build + start + health (first start: one `next build` per app, serialized, several min)
 make health                           # every service + "proxy denies a non-allow-listed host"
 make verify                           # core gate (@gate, not @quarantine) on the host vs the local stack, 4 workers,
                                       # no retries, 25 min cap -> .state/runs/gate-<ts>/ (make verify KEY=... adds @KEY)
@@ -100,10 +100,10 @@ AI per-ticket instructions: [docs/ai-loop.md](docs/ai-loop.md). Suite env: [docs
 | ingress | wired | nginx stream; publishes ports on 127.0.0.1. |
 | mailpit, minio + minio-init, klaviyo-recorder | **live** | Mailpit UI `:18025`, MinIO API `:19000` / console `:19001` (`pgsty/minio` community fork; upstream images are gone), recorder `:18090`. |
 | tf-apigateway, kratos, keto, gateway-postgres | **live** | Gateway `:13004/health`; Kratos public `:14433` (admin `:14434`, loopback); Keto internal. Mirrors the gateway repo's compose; Kratos config `auth/kratos/kratos.yml` (localhost URLs, Google off, courier -> Mailpit). |
-| memberportal | **live** (`next dev`) | `http://localhost:13001/login`. Points only at local tf-api. Builder pages (`/login`, `/dashboard`, `/subscriptions`, ...) render real content from Builder.io via the read-only egress (cdn.builder.io, GET only); no local overlays. |
+| memberportal | **live** (`next build` + `next start`; LOCAL_APP_MODE=dev for `next dev`) | `http://localhost:13001/login`. Points only at local tf-api. Builder pages (`/login`, `/dashboard`, `/subscriptions`, ...) render real content from Builder.io via the read-only egress (cdn.builder.io, GET only); no local overlays. |
 | auth users | **seeded** | `make seed-auth` (also run by `make up`): "test test" portal customer (tf-api DB + Kratos) and a local admin (Kratos, Keto role `admin`). Credentials in `.env`. `make prove-login` = headless login proof. |
-| admin-panel | **live** (`next dev`) | `http://localhost:13002`. Local tf-api / gateway / Kratos only. Staff login goes through the funnels app's `/internal_admin/login` (Kratos). |
-| aff-landing-pages (funnels) | **live** (`next dev`) | `http://localhost:13003`. Builder.io pages (`/`, `/offers/*`, `/info/*`, `/pages/*`) 404 offline (Builder unreachable; no allow-list entry in offline mode). Checkout needs Sticky/TF: fails offline. |
+| admin-panel | **live** (prod build; LOCAL_APP_MODE=dev for `next dev`) | `http://localhost:13002`. Local tf-api / gateway / Kratos only. Staff login goes through the funnels app's `/internal_admin/login` (Kratos). |
+| aff-landing-pages (funnels) | **live** (prod build, standalone server; LOCAL_APP_MODE=dev for `next dev`) | `http://localhost:13003`. Builder.io pages (`/`, `/offers/*`, `/info/*`, `/pages/*`) 404 offline (Builder unreachable; no allow-list entry in offline mode). Checkout needs Sticky/TF: fails offline. |
 | vector-search | **live** (profile `vector`: `make up VECTOR=1`) | `http://localhost:18077`. Local data files from the repo; Vertex AI backend never configured. |
 | cron | **refuses** (profile `cron`) | See [cron/README.md](cron/README.md). |
 
