@@ -26,11 +26,12 @@ Decision (Michael): AI may merge once proper checks and guards are in place. Rul
 ## 4. How suite runs work (agreed direction)
 1. **Standard suite = regression + core.** Ticket and feature tests are excluded from it.
 2. **When a branch merges to an environment (develop, stage),** the run is the standard suite plus **that branch's own feature tests only**.
-3. **Ticket tests join regression later** through a QA promotion process, probably after release. This is an open topic to brainstorm: who approves, when, and how tags change.
+3. **Ticket tests join regression later** through a QA promotion process, probably after release. This is an open topic to brainstorm: when, and how tags change.
+   Decision (Michael): the QA engineer, Puneet, kicks off the promotion of a ticket's feature tests into regression and signs off on it. He may use AI to do the promotion work.
 4. **Quarantine (proposal):** a test that fails and passes on rerun is tagged to stop blocking merges while it is fixed, with a Jira ticket and a fix deadline.
 
 ## 5. Open items
 - Back-to-back count: 3 or 5.
 - Fix deadline length for quarantined tests.
 - Who owns the quarantine tickets.
-- QA promotion of feature tests into regression (timing, owner, mechanics).
+- QA promotion of feature tests into regression (timing and mechanics; owner decided: Puneet).
