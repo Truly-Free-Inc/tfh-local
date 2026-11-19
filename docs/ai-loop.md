@@ -5,7 +5,7 @@
 - **Real non-prod Sticky + TF, TEST ORDERS ONLY** ("test test" customer + test cards).
 - **Never touch or widen** tfh-automation `lib/test-order-guard.ts`. **Never change feature flags.**
 - **Never bypass** `scripts/preflight.sh` or edit `safety/`, `proxy/allowlist.txt` to get past a refusal.
-- **No secrets** in commits, logs, PR bodies or chat. **Open PRs, NEVER merge** (no approve, no force-push).
+- **No secrets** in commits, logs, PR bodies or chat. **Open PRs; merge only under the rule in step 6** (no force-push).
 - Anything odd (non-test order, prod host, flag change, secret in output): **STOP and report to Michael.**
 Full rules: [safety.md](safety.md).
 
@@ -52,7 +52,7 @@ Let `KEY` be the Jira key (e.g. `TFHFUNNEL-1234`).
    make pr KEY=$KEY CONFIRM=1  # push + open PRs to develop (main where no develop)
    ```
    GitHub repos get a PR via `gh`. Bitbucket repos: open the printed URL and paste the printed body file.
-   **Never merge.**
+   **Merging (tfh-automation PRs only):** AI may merge only when every required check passes and the scope guard is green; otherwise it opens the PR and stops. Not enabled until the guard exists. See [automation-merge-process.md](automation-merge-process.md). App-repo PRs: never merge.
 
 7. **Report**: ticket key, branch per repo, PR links (or Bitbucket URLs), verify summary path and result.
    End shared-channel posts with `* posted by AI bot`.

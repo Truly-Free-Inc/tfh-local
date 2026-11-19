@@ -26,7 +26,7 @@ make ticket KEY=TFHFUNNEL-1234
 make verify KEY=TFHFUNNEL-1234
 make pr KEY=TFHFUNNEL-1234     # dry run; CONFIRM=1 to push + open PRs
 ```
-AI per-ticket instructions: [docs/ai-loop.md](docs/ai-loop.md). Suite env: [docs/local-env.md](docs/local-env.md).
+AI per-ticket instructions: [docs/ai-loop.md](docs/ai-loop.md). Suite env: [docs/local-env.md](docs/local-env.md). Automation merge process: [docs/automation-merge-process.md](docs/automation-merge-process.md).
 
 ## Targets
 | Target | What |
