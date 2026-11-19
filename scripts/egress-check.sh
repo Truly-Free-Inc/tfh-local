@@ -16,7 +16,7 @@ DENY_PROBES=(
   "CONNECT api.mailgun.net"
   "CONNECT avalara.com" "CONNECT rest.avatax.com"
   "CONNECT tfhcore.trulyfreehome.com"
-  "CONNECT builder.io" "CONNECT www.builder.io"
+  "CONNECT builder.io" "CONNECT www.builder.io" "CONNECT api.builder.io"
 )
 ALLOW_PROBES=()
 RO="$ROOT/proxy/readonly-allowlist.txt"

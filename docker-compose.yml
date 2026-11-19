@@ -199,6 +199,7 @@ services:
     restart: unless-stopped
     volumes:
       - ./proxy/allowlist.txt:/etc/tinyproxy/allowlist.txt:ro
+      - ./proxy/readonly-allowlist.txt:/etc/tinyproxy/readonly-allowlist.txt:ro
     networks: [internal, egress]
 
   # Host port publishing for services on the internal network (TCP passthrough, nginx stream).
@@ -219,6 +220,8 @@ services:
       - "127.0.0.1:${MEMBERPORTAL_HOST_PORT:-13001}:13001"
       - "127.0.0.1:${ADMIN_PANEL_HOST_PORT:-13002}:13002"
       - "127.0.0.1:${FUNNELS_HOST_PORT:-13003}:13003"
+      # Storefront URL (tfh-automation local storefront): same funnels app, own port so it can be pointed elsewhere later.
+      - "127.0.0.1:${STOREFRONT_HOST_PORT:-13005}:13005"
       - "127.0.0.1:${VECTOR_SEARCH_HOST_PORT:-18077}:18077"
       - "127.0.0.1:${APIGATEWAY_HOST_PORT:-13004}:13004"
       - "127.0.0.1:${KRATOS_PUBLIC_HOST_PORT:-14433}:14433"
@@ -385,19 +388,26 @@ services:
 
   # ---------------------------------------------------------------- memberportal (M2)
   # `next dev` image (docker/memberportal.Dockerfile). Points ONLY at local tf-api. tfhcore URLs are never set.
-  # Builder.io is unreachable offline: a local /login overlay renders the real LoginForm; Builder pages 404.
+  # Builder pages (/login, /dashboard, ...) render from Builder.io via the read-only egress (cdn.builder.io, GET only).
   memberportal:
     build:
       context: ./apps/memberportal
       dockerfile: ../../docker/memberportal.Dockerfile
-      additional_contexts:
-        overlay: ./docker/memberportal-overlay
     image: tfh-local/memberportal:local
     restart: unless-stopped
-    # No memory cap: capped at 2-4 GB, next dev restarts itself or is OOM-killed while compiling /dashboard
-    # after login. The admin panel and funnels are capped instead (Docker Desktop has ~8 GB for the whole stack).
+    volumes:
+      - ./docker/node-egress-preload.cjs:/opt/tfh-local/node-egress-preload.cjs:ro
+    # Memory (M5a, measured): next dev's `next-server` child holds ~10.4k webpack modules per compiled route; its
+    # anon RSS reaches 4.1-4.5 GB after ~7 routes (beyond the V8 heap cap: native/external memory). Uncapped on the
+    # old ~8 GB VM it starved the VM; restarts were not flagged OOMKilled (the child, not PID 1, dies; restart:
+    # unless-stopped brings `next dev` back). Kernel OOM log was lost in the Docker Desktop crash.
+    # Now: a cgroup limit (an OOM stays inside this container) paired with a V8 heap cap well below it (headroom for
+    # SWC/webpack native memory), so V8 collects harder before the kernel steps in. Needs Docker Desktop >= 12 GB.
+    mem_limit: ${MEMBERPORTAL_MEM_LIMIT:-5g}
     environment:
       <<: *proxy-env
+      # Heap cap + server-side fetch through the egress proxy (Builder.io read-only); see docker/node-egress-preload.cjs.
+      NODE_OPTIONS: --max-old-space-size=${MEMBERPORTAL_HEAP_MB:-3072} --require /opt/tfh-local/node-egress-preload.cjs
       NODE_ENV: development
       ENVIRONMENT: local
       NEXT_PUBLIC_ENVIRONMENT: local
@@ -410,9 +420,10 @@ services:
       MEMBER_PORTAL_BASE_URL: http://localhost:${MEMBERPORTAL_HOST_PORT:-13001}
       NEXT_PUBLIC_MEMBER_PORTAL_LOGIN_URL: http://localhost:${MEMBERPORTAL_HOST_PORT:-13001}/login
       NEXT_PUBLIC_COOKIE_DOMAIN: ""            # host-only cookies on localhost (default is .trulyfreehome.com)
-      # Placeholder (not a key): Builder SDK throws without one; with it, fetches fail fast (no egress) -> 404 component.
-      NEXT_PUBLIC_BUILDER_API_KEY: tfh-local-offline
-      NEXT_PUBLIC_FUNNEL_BUILDER_API_KEY: tfh-local-offline
+      # Builder.io PUBLIC keys (read-only content API via proxy/readonly-allowlist.txt), set in .env (gitignored).
+      # Unset -> placeholder: Builder SDK throws without a key; with it, fetches fail -> 404 component.
+      NEXT_PUBLIC_BUILDER_API_KEY: ${LOCAL_BUILDER_PUBLIC_KEY_PORTAL:-tfh-local-offline}
+      NEXT_PUBLIC_FUNNEL_BUILDER_API_KEY: ${LOCAL_BUILDER_PUBLIC_KEY_FUNNEL:-tfh-local-offline}
       KLAVIYO_BASE_URL: http://klaviyo-recorder:8090
       NEXT_PUBLIC_KLAVIYO_BASE_URL: http://localhost:${KLAVIYO_RECORDER_HOST_PORT:-18090}
       NEXT_PUBLIC_SENTRY_ENABLED: "false"
@@ -465,10 +476,15 @@ services:
       dockerfile: ../../docker/next-dev.Dockerfile
     image: tfh-local/aff-landing-pages:local
     restart: unless-stopped
-    mem_limit: 1500m
+    # Memory (root cause, M5a): at 1500m with a 1024 MB heap, next dev's `next-server` child hit ~1.35 GB RSS
+    # (heap + SWC/webpack native memory) and was cgroup-OOM-killed 5x under the gate (exit 0, not flagged OOMKilled).
+    # Limit ~1.5x the heap cap leaves room for native memory.
+    mem_limit: ${FUNNELS_MEM_LIMIT:-3g}
+    volumes:
+      - ./docker/node-egress-preload.cjs:/opt/tfh-local/node-egress-preload.cjs:ro
     environment:
       <<: *proxy-env
-      NODE_OPTIONS: --max-old-space-size=1024
+      NODE_OPTIONS: --max-old-space-size=${FUNNELS_HEAP_MB:-2048} --require /opt/tfh-local/node-egress-preload.cjs
       NODE_ENV: development
       NEXT_PUBLIC_ENVIRONMENT: local
       TF_API_DOMAIN: http://tf-api:3000
@@ -478,9 +494,9 @@ services:
       NEXT_PUBLIC_HOST_NAME: localhost
       NEXT_PUBLIC_MEMBER_PORTAL_LOGIN_URL: http://localhost:${MEMBERPORTAL_HOST_PORT:-13001}/login
       CORS_ALLOWED_ORIGINS: http://localhost:${FUNNELS_HOST_PORT:-13003},http://localhost:${ADMIN_PANEL_HOST_PORT:-13002}
-      # Builder.io is unreachable offline (proxy denies all; preflight allows no allow-list entry in offline mode).
-      # Placeholder, not a key: Builder-backed pages (/, /offers/*, /info/*, /pages/*) 404 locally.
-      NEXT_PUBLIC_BUILDER_API_KEY: tfh-local-offline
+      # Builder.io PUBLIC key (read-only content API via proxy/readonly-allowlist.txt), set in .env (gitignored).
+      # Unset -> placeholder: Builder-backed pages (/, /offers/*, /info/*, /pages/*) 404 locally.
+      NEXT_PUBLIC_BUILDER_API_KEY: ${LOCAL_BUILDER_PUBLIC_KEY_FUNNEL:-tfh-local-offline}
       NEXT_PUBLIC_SENTRY_ENABLED: "false"
       SENTRY_ENABLED: "false"
       NEXT_PUBLIC_SENTRY_DSN: ""

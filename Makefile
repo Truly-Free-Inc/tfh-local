@@ -26,6 +26,9 @@ up: ## preflight, then build + start core services
 down: ## stop the stack (keeps volumes)
 	@docker compose --profile stub --profile vector --profile cron down
 
+warmup: ## compile the gate's next dev routes serially (also run by up and verify)
+	@scripts/warmup.sh
+
 health: ## core containers, one-shot jobs, tf-api /health, Mailpit, MinIO, proxy deny check
 	@scripts/health.sh
 

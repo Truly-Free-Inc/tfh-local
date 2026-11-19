@@ -80,8 +80,11 @@ Gate tag: `@gate` (`npm run test:gate` = `--grep @gate --grep-invert @quarantine
 - Mail: Kratos courier -> Mailpit (`:18025`). tf-api sends via the Mailgun HTTP API, and its client deliberately
   ignores `MAILGUN_BASE_URL` (fixed base URL), so `MAILGUN_*` stays unset: tf-api mail (cancel/support/order
   emails) is not sent locally.
-- Builder.io: unreachable. Offline preflight requires an empty `proxy/allowlist.txt` and has no separate read-only
-  list, so Builder is not allow-listed. Funnel Builder pages 404; the funnels header/footer come from fixtures.
+- Builder.io: READ-ONLY (Michael, 2026-11-19 2:57 PM ET). `proxy/readonly-allowlist.txt` holds only `cdn.builder.io`;
+  preflight refuses any other entry in every mode (`READONLY_APPROVED`). Public keys come from `.env`
+  (`LOCAL_BUILDER_PUBLIC_KEY_PORTAL`/`_FUNNEL`). Node's fetch ignores `HTTPS_PROXY`, so `docker/node-egress-preload.cjs`
+  (NODE_OPTIONS --require) routes it through the proxy and refuses non-GET to read-only hosts. Browser-side Builder
+  requests go straight from your browser (host network).
 - tfhcore: an audit found remaining tfhcore calls that **will fail locally until moved to tf-api**:
   memberportal (per-page session create, addresses, search, logger, email change, old cancel flow, token refresh)
   and tf-api (cart-session fallback, Redis session dependency, two MySQL jobs). tfhcore is never configured here.
@@ -94,7 +97,7 @@ Gate tag: `@gate` (`npm run test:gate` = `--grep @gate --grep-invert @quarantine
 - Login-time Sticky calls fail in milliseconds (offline). `login_order_sync_enabled` has no flag row locally, so sync is skipped.
 - `next dev` hydrates late: fill the login form after `load` (see `scripts/prove-portal-login.cjs`). First hit of each
   route compiles it (~20-30 s).
-- Offline failures (expected): Builder.io pages other than `/login` and `/dashboard` (overlays), the dashboard sidebar
+- Offline failures (expected): the dashboard sidebar
   (Builder symbol), Google login, Google Fonts (fallback font), GTM/Yotpo/referral scripts, portal CloudWatch
   logger (defaults to a remote develop host; DNS fails, nothing leaves), OTEL trace proxy (500, harmless), and every
   tfhcore-backed flow (addresses, header search, logger, email change, old cancel flow, token refresh).

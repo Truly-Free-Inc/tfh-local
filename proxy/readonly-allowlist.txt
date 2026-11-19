@@ -1,0 +1,7 @@
+# tfh-local READ-ONLY egress list (tinyproxy, POSIX ERE on host name). Approved by Michael 2026-11-19 2:57 PM ET:
+# Builder.io read-only content API so real Builder pages render locally.
+#
+# ONLY hosts in scripts/preflight.sh READONLY_APPROVED may appear here (preflight refuses anything else, in every
+# EXTERNALS mode). Only public Builder keys are configured; the Builder write API (builder.io/api/v1/write, needs a
+# private key) is not on this list. Node apps also refuse non-GET requests to these hosts (docker/node-egress-preload.cjs).
+^cdn\.builder\.io$

@@ -19,3 +19,5 @@ dc ps
 "$ROOT/scripts/health.sh"
 # Local auth users (portal test customer + local admin); idempotent, never touches feature flags.
 "$ROOT/seed/auth-users.sh"
+# Compile the gate's next dev routes serially (memory: avoids parallel compile storms). WARMUP=0 skips.
+[ "${WARMUP:-1}" = "0" ] || "$ROOT/scripts/warmup.sh"
