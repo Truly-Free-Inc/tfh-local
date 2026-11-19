@@ -110,6 +110,10 @@ Gate tag: `@gate` (`npm run test:gate` = `--grep @gate --grep-invert @quarantine
   holds only built routes. `LOCAL_APP_MODE=dev` brings back `next dev` (hot reload). `make up` / `make verify` wait for
   the builds (`scripts/warmup.sh --wait-only`). Fonts: `next/font/google` is answered offline by
   `docker/next-font-offline.cjs` (system-font fallback; Google Fonts stays blocked).
+- Production builds set `Secure` cookies (`NODE_ENV=production`). Verified in the M6 gate: portal login passes on
+  Chromium and WebKit (iPhone projects) over `http://localhost`.
+- Funnels/portal cookie names use the deployed scheme with a `local` suffix (`tf_cart_id_local`, ...). Without
+  `NEXT_PUBLIC_CART_ID_COOKIE_NAME` add-to-cart silently does nothing.
 - tf-api runs with `BASIC_AUTH_ENABLED=true` like deployed envs: every route except `/ping`, `/health` and Zaymo needs
   Basic auth. `make bootstrap` generates `TF_API_BASIC_AUTH_USERNAME/PASSWORD` into `.env` (local-only values); compose
   passes them to tf-api and, as `BASIC_AUTH_USERNAME/PASSWORD` (server env only), to the three Next.js apps; `make verify`
