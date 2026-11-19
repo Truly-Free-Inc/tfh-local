@@ -36,5 +36,17 @@ echo 'klaviyo\.com$' >> "$SB/safety/prod-denylist.txt"
 out="$("$SB/scripts/preflight.sh" 2>&1)"; rc=$?
 expect_true "unanchored deny entry -> preflight exit 1" [ $rc -eq 1 ]
 expect_true "message names the entry" grep -q "prod-denylist.txt entry 'klaviyo" <<<"$out"
+echo "gitignored safety/prod-denylist.local.txt is enforced too"
+sed -i.bak '$d' "$SB/safety/prod-denylist.txt"; rm -f "$SB/safety/prod-denylist.txt.bak"
+echo 'internal-host.example$' > "$SB/safety/prod-denylist.local.txt"
+out="$("$SB/scripts/preflight.sh" 2>&1)"; rc=$?
+expect_true "unanchored local deny entry -> preflight exit 1" [ $rc -eq 1 ]
+expect_true "message names the local file" grep -q "prod-denylist.local.txt entry" <<<"$out"
+expect_true "local deny file is gitignored" git -C "$T_ROOT" check-ignore -q safety/prod-denylist.local.txt
 rm -rf "$SB"
+
+echo "no named TFH hosts in tracked files (suffix patterns only)"
+named="$(git -C "$T_ROOT" grep -nE '[a-z0-9-]+\\?\.(trulyfreehome|mygreenfills)\\?\.com' -- ':!tests/' ':!scripts/egress-check.sh' || true)"
+expect_true "no named hosts outside probes/tests" [ -z "$named" ]
+[ -z "$named" ] || printf '%s\n' "$named" >&2
 done_tests

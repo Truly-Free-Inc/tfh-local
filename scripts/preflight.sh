@@ -14,6 +14,14 @@ load_env
 
 NONPROD="$ROOT/safety/nonprod-hosts.txt"
 DENY="$ROOT/safety/prod-denylist.txt"
+# Optional gitignored extra deny list (named internal hosts kept out of the public repo). Enforced the same way.
+DENY_LOCAL="$ROOT/safety/prod-denylist.local.txt"
+if [ -f "$DENY_LOCAL" ]; then
+  DENY_ALL="$(mktemp)"; trap 'rm -f "$DENY_ALL"' EXIT
+  cat "$DENY" "$DENY_LOCAL" > "$DENY_ALL"; DENY_FILES=("$DENY" "$DENY_LOCAL"); DENY="$DENY_ALL"
+else
+  DENY_FILES=("$DENY")
+fi
 ALLOW="$ROOT/proxy/allowlist.txt"
 
 matches() { # matches <host> <patternfile>
@@ -23,7 +31,7 @@ matches() { # matches <host> <patternfile>
 
 # 0a. Pattern hygiene: every regex in the deny list, the egress allow-lists and the non-prod list must be
 #     ^...$ anchored with escaped dots (see lib.sh pattern_anchored). Applies in both EXTERNALS modes.
-for pf in "$DENY" "$ALLOW" "$NONPROD" "$ROOT/proxy/readonly-allowlist.txt"; do
+for pf in "${DENY_FILES[@]}" "$ALLOW" "$NONPROD" "$ROOT/proxy/readonly-allowlist.txt"; do
   [ -f "$pf" ] || continue
   while IFS= read -r pat; do
     pattern_anchored "$pat" || bad "${pf#$ROOT/} entry '$pat' is not anchored (^...\$) with escaped dots"

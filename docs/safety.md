@@ -47,3 +47,13 @@ Sentry, CloudWatch. Changes to these two files need Michael's review.
 ## If something looks wrong
 A non-test order, a prod host in a log, a flag that changed, a secret in output: **STOP**, do not retry, do
 not clean up on your own, report to Michael with the run directory (`.state/runs/...`).
+
+## Hardening checks (M5h)
+- Deny/allow pattern files must be `^...$` anchored with escaped dots (preflight refuses otherwise). Prod TFH
+  domains are denied by suffix; named internal hosts belong only in the gitignored `safety/prod-denylist.local.txt`.
+  Git history before this change still contains some named hosts (history is never rewritten).
+- `make pr` pushes only via `safe_push` (never main/master/develop/stage/the PR base).
+- Compose credentials have no defaults; `make bootstrap` generates missing ones into `.env` (never printed).
+- `make check-secrets` runs gitleaks (full history + staged) when installed; CI runs it on every PR.
+- `make health` proves egress: 403 for prod/Sticky/Klaviyo/Mailgun/Avalara/tfhcore/builder.io root, 200 only for
+  the read-only allow-list. `make test` runs the offline shell tests in `tests/`.
