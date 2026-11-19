@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
-# make verify KEY=TFHFUNNEL-1234
+# make verify KEY=TFHFUNNEL-1234   (or plain `make verify`: core gate only)
 # preflight -> stack health -> tfh-automation on the HOST against the local stack:
-#   1) the ticket's tests:  --grep @KEY   (must exist; Playwright exits non-zero if none match)
+#   1) the ticket's tests:  --grep @KEY   (must exist; Playwright exits non-zero if none match; skipped without KEY)
 #   2) the core gate:       --grep @gate --grep-invert @quarantine   (same as `npm run test:gate`)
 # -> scripts/check-test-orders.sh -> .state/runs/<KEY>-<ts>/summary.md + reports. Exit non-zero if red.
 # The suite's test-order guard (lib/test-order-guard.ts) is used as-is. Never edit or widen it.
 . "$(dirname "$0")/lib.sh"
-require_key
+if [ -n "${KEY:-}" ]; then require_key; LABEL="$KEY"; else LABEL=gate; fi
 load_env
 SUITE="$APPS/tfh-automation"
 [ -d "$SUITE" ] || die "apps/tfh-automation missing. Run: make bootstrap"
@@ -23,22 +23,26 @@ TENV="${TFH_AUTOMATION_TARGET_ENV:-local}"
 grep -qE "'local'" "$SUITE/config/envs.ts" || die "tfh-automation on branch $(git -C "$SUITE" rev-parse --abbrev-ref HEAD) has no 'local' env in config/envs.ts. See docs/local-env.md (suite PR needed; do not hand-edit to bypass)."
 
 TS="$(date -u +%Y%m%dT%H%M%SZ)"; START="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-RUN="$STATE/runs/$KEY-$TS"; mkdir -p "$RUN"
+RUN="$STATE/runs/$LABEL-$TS"; mkdir -p "$RUN"
 SHAS="$(repo_shas_json)"
 
+# Local suite credentials: the only portal user locally is the seeded "test test" customer (.env). Workers and the
+# wall-clock cap are tunable: VERIFY_WORKERS (default 4), VERIFY_MAX_SECONDS (default 1500 = 25 min).
+WORKERS="${VERIFY_WORKERS:-4}"; MAXS="${VERIFY_MAX_SECONDS:-1500}"
 run_suite() { # label grep [grep-invert]
   local label="$1" grep="$2" inv="${3:-}" args
-  args=(playwright test --grep "$grep" --retries 0 --reporter=list,html,json --output "$RUN/$label/test-results")
+  args=(playwright test --grep "$grep" --retries 0 --workers "$WORKERS" --reporter=list,html,json --output "$RUN/$label/test-results")
   [ -n "$inv" ] && args+=(--grep-invert "$inv")
-  ( cd "$SUITE" && env TARGET_ENV=local TZ=UTC \
+  ( cd "$SUITE" && env TARGET_ENV=local TZ=UTC TFR_RETRIES=0 \
+      MEMBER_PORTAL_USER="${TEST_CUSTOMER_PORTAL_EMAIL:-}" MEMBER_PORTAL_PASSWORD="${TEST_CUSTOMER_PORTAL_PASSWORD:-}" \
       PLAYWRIGHT_HTML_OUTPUT_DIR="$RUN/$label/html" PLAYWRIGHT_HTML_REPORT="$RUN/$label/html" PLAYWRIGHT_HTML_OPEN=never \
       PLAYWRIGHT_JSON_OUTPUT_NAME="$RUN/$label/results.json" \
-      npx "${args[@]}" ) > "$RUN/$label.log" 2>&1
+      perl -e 'alarm shift; exec @ARGV' "$MAXS" npx "${args[@]}" ) > "$RUN/$label.log" 2>&1
 }
 
 mkdir -p "$RUN/ticket" "$RUN/gate"
 set +e
-run_suite ticket "@$KEY";             T=$?
+if [ -n "${KEY:-}" ]; then run_suite ticket "@$KEY"; T=$?; else T=0; fi
 run_suite gate   "@gate" "@quarantine"; G=$?
 "$ROOT/scripts/check-test-orders.sh" "$START" > "$RUN/test-orders.log" 2>&1; O=$?
 set -e
@@ -46,17 +50,17 @@ set -e
 status=green; [ $T -eq 0 ] && [ $G -eq 0 ] && [ $O -eq 0 ] || status=red
 word() { [ "$1" -eq 0 ] && echo PASS || echo FAIL; }
 cat > "$RUN/summary.md" <<MD
-# verify $KEY ($TS): $(echo "$status" | tr a-z A-Z)
+# verify $LABEL ($TS): $(echo "$status" | tr a-z A-Z)
 
 | step | result | log |
 |---|---|---|
-| ticket tests (@$KEY) | $(word $T) | ticket.log, ticket/html |
+| ticket tests (@${KEY:-none}) | $( [ -n "${KEY:-}" ] && word $T || echo SKIPPED) | ticket.log, ticket/html |
 | core gate (@gate, not @quarantine) | $(word $G) | gate.log, gate/html |
 | test orders only (local DB since $START) | $(word $O) | test-orders.log |
 
 Repos (branch @ sha): \`$SHAS\`
 MD
-printf '{"key":"%s","ts":"%s","status":"%s","repos":%s}\n' "$KEY" "$TS" "$status" "$SHAS" > "$RUN/result.json"
-cp "$RUN/result.json" "$STATE/runs/last-$KEY.json"
+printf '{"key":"%s","ts":"%s","status":"%s","repos":%s}\n' "$LABEL" "$TS" "$status" "$SHAS" > "$RUN/result.json"
+cp "$RUN/result.json" "$STATE/runs/last-$LABEL.json"
 cat "$RUN/summary.md"
 [ "$status" = green ] && grn "verify: GREEN ($RUN)" || { red "verify: RED ($RUN)"; tail -n 30 "$RUN"/*.log >&2 || true; exit 1; }

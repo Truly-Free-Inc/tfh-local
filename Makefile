@@ -38,7 +38,7 @@ prove-login: ## headless portal login as the seeded test customer -> /dashboard;
 logs: ## follow logs (S=service to filter)
 	@docker compose logs -f --tail=200 $(S)
 
-verify: ## KEY=... preflight, health, ticket tests + core gate on host, test-order check
+verify: ## [KEY=...] preflight, health, (ticket tests) + core gate on host (TARGET_ENV=local), test-order check
 	@scripts/verify.sh
 
 status: ## ticket, branches, dirty flags, last verify, containers

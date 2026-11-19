@@ -8,7 +8,12 @@ Site URLs can be overridden (`FUNNEL_BASE_URL`, `MEMBER_PORTAL_BASE_URL`, `STORE
 but API services (`SERVICES[env].tfApi` etc.) are hard-coded per env. So `TARGET_ENV=dev` + overrides would still
 send api-* tests to the **develop** tf-api. `make verify` therefore refuses unless the suite has a `local` env.
 
-## Proposed suite change (small PR in tfh-automation; NOT done by tfh-local)
+## Suite change: tfh-automation PR #4 (`feat/local-env`, open, not merged)
+https://github.com/Truly-Free-Inc/tfh-automation/pull/4 adds `local` (as sketched below, with all four sites live
+except storefront) and makes the cross-env guard STRICTER for local runs (every trulyfreehome.com host = another env).
+`make verify` runs `TARGET_ENV=local` and maps the seeded test customer to `MEMBER_PORTAL_USER`/`_PASSWORD`.
+
+### Original sketch
 Do not hand-edit `apps/tfh-automation` to get past verify. Open a normal PR in tfh-automation (base `main`) with:
 
 ```ts
