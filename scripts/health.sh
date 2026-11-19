@@ -32,6 +32,7 @@ else red "not answering: memberportal /login"; fail=1; fi
 # Admin panel + funnels also run `next dev` (first compile is slow).
 probe_slow() { if curl -sS -m 120 -o /dev/null -w '%{http_code}' "$2" | grep -qE '^(200|30[0-9])$'; then echo "ok: $1 $2"; else red "not answering: $1 $2"; fail=1; fi; }
 probe_slow admin-panel "http://127.0.0.1:${ADMIN_PANEL_HOST_PORT:-13002}/login"
+probe_slow storefront "http://127.0.0.1:${STOREFRONT_HOST_PORT:-13005}/api/healthz"
 probe_slow funnels     "http://127.0.0.1:${FUNNELS_HOST_PORT:-13003}/internal_admin/login"
 if [ -n "$(dc ps -q vector-search 2>/dev/null)" ]; then probe vector-search "http://127.0.0.1:${VECTOR_SEARCH_HOST_PORT:-18077}/"; fi
 # Egress must stay locked: the proxy must refuse a host that is not on the allow-list.

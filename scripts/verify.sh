@@ -27,8 +27,11 @@ RUN="$STATE/runs/$LABEL-$TS"; mkdir -p "$RUN"
 SHAS="$(repo_shas_json)"
 
 # Local suite credentials: the only portal user locally is the seeded "test test" customer (.env). Workers and the
-# wall-clock cap are tunable: VERIFY_WORKERS (default 4), VERIFY_MAX_SECONDS (default 1500 = 25 min).
-WORKERS="${VERIFY_WORKERS:-4}"; MAXS="${VERIFY_MAX_SECONDS:-1500}"
+# wall-clock cap are tunable: VERIFY_WORKERS (default 2), VERIFY_MAX_SECONDS (default 1500 = 25 min).
+# 2 workers (was 4): the portal/funnels run `next dev`; more workers = more parallel route compiles = OOM restarts.
+# Routes are pre-compiled serially first (scripts/warmup.sh).
+"$ROOT/scripts/warmup.sh" >/dev/null 2>&1 || true
+WORKERS="${VERIFY_WORKERS:-2}"; MAXS="${VERIFY_MAX_SECONDS:-1500}"
 run_suite() { # label grep [grep-invert]
   local label="$1" grep="$2" inv="${3:-}" args
   args=(playwright test --grep "$grep" --retries 0 --workers "$WORKERS" --reporter=list,html,json --output "$RUN/$label/test-results")
