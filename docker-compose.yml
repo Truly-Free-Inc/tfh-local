@@ -51,10 +51,10 @@ services:
     restart: unless-stopped
     entrypoint: ["/bin/bash", "/init-wrapper.sh"]
     environment:
-      POSTGRES_USER: ${POSTGRES_USER:-tfh_local_admin}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-tfh_local_admin_pw}
-      APP_DB_USER: ${APP_DB_USER:-tf_api_local}
-      APP_DB_PASS: ${APP_DB_PASS:-tf_api_local_pw}
+      POSTGRES_USER: ${POSTGRES_USER:?set in .env (make bootstrap)}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set in .env (make bootstrap)}
+      APP_DB_USER: ${APP_DB_USER:?set in .env (make bootstrap)}
+      APP_DB_PASS: ${APP_DB_PASS:?set in .env (make bootstrap)}
       APP_DB_NAME: ${APP_DB_NAME:-tf_api_local}
     volumes:
       - postgres-data:/var/lib/postgresql/data
@@ -62,7 +62,7 @@ services:
       - ./apps/tf-api/dockercompose_init/init-wrapper.sh:/init-wrapper.sh:ro
       - ./apps/tf-api/db-bootstrap/sql/01_app_init.sql:/docker-entrypoint-initdb.d/03_app_init.sql:ro
     healthcheck:
-      test: ["CMD", "pg_isready", "-U", "${POSTGRES_USER:-tfh_local_admin}"]
+      test: ["CMD", "pg_isready", "-U", "${POSTGRES_USER:?set in .env (make bootstrap)}"]
       interval: 5s
       timeout: 5s
       retries: 20
@@ -87,8 +87,8 @@ services:
     restart: "no"
     environment:
       JDBC_URL: jdbc:postgresql://postgres:5432/${APP_DB_NAME:-tf_api_local}
-      DB_USER: ${APP_DB_USER:-tf_api_local}
-      DB_PASSWORD: ${APP_DB_PASS:-tf_api_local_pw}
+      DB_USER: ${APP_DB_USER:?set in .env (make bootstrap)}
+      DB_PASSWORD: ${APP_DB_PASS:?set in .env (make bootstrap)}
     depends_on:
       postgres: { condition: service_healthy }
     networks: [internal]
@@ -100,8 +100,8 @@ services:
     entrypoint: ["/bin/bash", "/seed/run-seed.sh"]
     environment:
       PGHOST: postgres
-      PGUSER: ${APP_DB_USER:-tf_api_local}
-      PGPASSWORD: ${APP_DB_PASS:-tf_api_local_pw}
+      PGUSER: ${APP_DB_USER:?set in .env (make bootstrap)}
+      PGPASSWORD: ${APP_DB_PASS:?set in .env (make bootstrap)}
       PGDATABASE: ${APP_DB_NAME:-tf_api_local}
     volumes: ["./seed:/seed:ro"]
     depends_on:
@@ -121,8 +121,8 @@ services:
       DB_HOST: postgres
       DB_HOST_RO: postgres
       DB_PORT: "5432"
-      DB_USER: ${APP_DB_USER:-tf_api_local}
-      DB_PASSWORD: ${APP_DB_PASS:-tf_api_local_pw}
+      DB_USER: ${APP_DB_USER:?set in .env (make bootstrap)}
+      DB_PASSWORD: ${APP_DB_PASS:?set in .env (make bootstrap)}
       DB_NAME: ${APP_DB_NAME:-tf_api_local}
       DB_SSL_MODE: disable
       REDIS_HOST: redis
@@ -151,8 +151,8 @@ services:
       # S3 -> MinIO. AWS SDK v2 honours AWS_ENDPOINT_URL; it uses virtual-host style (<bucket>.minio:9000), which
       # MinIO serves via MINIO_DOMAIN=minio + a network alias per bucket (see the minio service). No tf-api change.
       AWS_ENDPOINT_URL: http://minio:9000
-      AWS_KEY: ${MINIO_ROOT_USER:-tfh-local-minio}
-      AWS_SECRET: ${MINIO_ROOT_PASSWORD:-tfh-local-minio-pw}
+      AWS_KEY: ${MINIO_ROOT_USER:?set in .env (make bootstrap)}
+      AWS_SECRET: ${MINIO_ROOT_PASSWORD:?set in .env (make bootstrap)}
       AWS_REGION: ${AWS_REGION:-us-east-1}
       AWS_BUCKET: ${AWS_BUCKET:-}
       AWS_CDN_DOMAIN: ${AWS_CDN_DOMAIN:-}
@@ -237,8 +237,8 @@ services:
     restart: unless-stopped
     command: ["server", "/data", "--console-address", ":9001"]
     environment:
-      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-tfh-local-minio}
-      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-tfh-local-minio-pw}
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:?set in .env (make bootstrap)}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?set in .env (make bootstrap)}
       MINIO_DOMAIN: minio   # virtual-host style: <bucket>.minio -> bucket (AWS SDK default addressing)
     volumes: [minio-data:/data]
     healthcheck:
@@ -261,8 +261,8 @@ services:
     restart: "no"
     entrypoint: ["/bin/sh", "/minio/init-buckets.sh"]
     environment:
-      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-tfh-local-minio}
-      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-tfh-local-minio-pw}
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:?set in .env (make bootstrap)}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?set in .env (make bootstrap)}
       BUCKETS: "${AWS_BUCKET:-} ${CATALOG_S3_BUCKET:-} ${SEARCH_MODEL_S3_BUCKET:-} ${SITEMAP_S3_BUCKET:-} ${YOTPO_S3_BUCKET:-}"
       SEARCH_MODEL_S3_BUCKET: ${SEARCH_MODEL_S3_BUCKET:-}
       SEARCH_MODEL_S3_KEY: ${SEARCH_MODEL_S3_KEY:-}
@@ -291,8 +291,8 @@ services:
     image: postgres:15-alpine
     restart: unless-stopped
     environment:
-      POSTGRES_USER: ${GATEWAY_DB_USER:-tfh_gateway_local}
-      POSTGRES_PASSWORD: ${GATEWAY_DB_PASSWORD:-tfh_gateway_local_pw}
+      POSTGRES_USER: ${GATEWAY_DB_USER:?set in .env (make bootstrap)}
+      POSTGRES_PASSWORD: ${GATEWAY_DB_PASSWORD:?set in .env (make bootstrap)}
       POSTGRES_DB: ${GATEWAY_DB_NAME:-tfh_gateway_local}
     volumes: [gateway-postgres-data:/var/lib/postgresql/data]
     healthcheck:
@@ -306,9 +306,9 @@ services:
     image: oryd/kratos:v1.3.1
     restart: "no"
     environment: &kratos-env
-      DSN: postgres://gateway-postgres:5432/${GATEWAY_DB_NAME:-tfh_gateway_local}?sslmode=disable&max_conns=20&max_idle_conns=4&user=${GATEWAY_DB_USER:-tfh_gateway_local}&password=${GATEWAY_DB_PASSWORD:-tfh_gateway_local_pw}
-      SECRETS_COOKIE: ${KRATOS_SECRETS_COOKIE:-}
-      SECRETS_CIPHER: ${KRATOS_SECRETS_CIPHER:-}
+      DSN: postgres://gateway-postgres:5432/${GATEWAY_DB_NAME:-tfh_gateway_local}?sslmode=disable&max_conns=20&max_idle_conns=4&user=${GATEWAY_DB_USER:?set in .env (make bootstrap)}&password=${GATEWAY_DB_PASSWORD:?set in .env (make bootstrap)}
+      SECRETS_COOKIE: ${KRATOS_SECRETS_COOKIE:?set in .env (make bootstrap)}
+      SECRETS_CIPHER: ${KRATOS_SECRETS_CIPHER:?set in .env (make bootstrap)}
       COURIER_SMTP_CONNECTION_URI: smtp://mailpit:1025/?disable_starttls=true
     volumes: &kratos-volumes
       - ./auth/kratos/kratos.yml:/etc/config/kratos/kratos.yml:ro
@@ -338,7 +338,7 @@ services:
     image: oryd/keto:v0.12.0-alpha.0
     restart: "no"
     environment: &keto-env
-      DSN: postgres://gateway-postgres:5432/${GATEWAY_DB_NAME:-tfh_gateway_local}?sslmode=disable&max_conns=20&max_idle_conns=4&user=${GATEWAY_DB_USER:-tfh_gateway_local}&password=${GATEWAY_DB_PASSWORD:-tfh_gateway_local_pw}
+      DSN: postgres://gateway-postgres:5432/${GATEWAY_DB_NAME:-tfh_gateway_local}?sslmode=disable&max_conns=20&max_idle_conns=4&user=${GATEWAY_DB_USER:?set in .env (make bootstrap)}&password=${GATEWAY_DB_PASSWORD:?set in .env (make bootstrap)}
       LOG_LEVEL: info
     volumes: &keto-volumes
       - ./apps/tf-apigateway/config/keto/keto.yml:/etc/config/keto/keto.yml:ro   # DSN overridden by env
@@ -490,8 +490,8 @@ services:
       SEARCH_MODEL_S3_KEY: ${SEARCH_MODEL_S3_KEY:-}
       AWS_ENDPOINT_URL: http://minio:9000
       AWS_REGION: ${AWS_REGION:-us-east-1}
-      AWS_ACCESS_KEY_ID: ${MINIO_ROOT_USER:-tfh-local-minio}
-      AWS_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD:-tfh-local-minio-pw}
+      AWS_ACCESS_KEY_ID: ${MINIO_ROOT_USER:?set in .env (make bootstrap)}
+      AWS_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD:?set in .env (make bootstrap)}
       OTEL_EXPORTER_OTLP_ENDPOINT: http://127.0.0.1:4318
       # NEVER set: SITEMAP_S3_URL (remote CDN), BRAINTREE_*/RECAPTCHA_*/APPLE_PAY_* (payments), KLAVIYO_API_KEY,
       # TFH_CORE_* (tfhcore OUT). Checkout needs Sticky/TF: expected to fail offline.
