@@ -26,6 +26,7 @@
 ^(.*\.)?mailgun\.(net|com|org)$
 ^(.*\.)?amazonaws\.com$
 ^(.*\.)?avalara\.(com|net)$
+^(.*\.)?avatax\.com$
 ^(.*\.)?infor\.com$
 ^(.*\.)?inforcloudsuite\.com$
 ^.*syteline.*$

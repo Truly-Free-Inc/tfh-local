@@ -34,7 +34,7 @@ probe_slow() { if curl -sS -m 120 -o /dev/null -w '%{http_code}' "$2" | grep -qE
 probe_slow admin-panel "http://127.0.0.1:${ADMIN_PANEL_HOST_PORT:-13002}/login"
 probe_slow funnels     "http://127.0.0.1:${FUNNELS_HOST_PORT:-13003}/internal_admin/login"
 if [ -n "$(dc ps -q vector-search 2>/dev/null)" ]; then probe vector-search "http://127.0.0.1:${VECTOR_SEARCH_HOST_PORT:-18077}/"; fi
-# Egress must stay locked: the proxy must refuse a host that is not on the allow-list.
-code="$(dc exec -T tf-api bash -c 'exec 3<>/dev/tcp/proxy/8888 && printf "GET http://a.klaviyo.com/ HTTP/1.0\r\nHost: a.klaviyo.com\r\n\r\n" >&3 && head -1 <&3' 2>/dev/null | awk '{print $2}' || true)"
-case "$code" in 403) echo "ok: proxy denies non-allow-listed host (a.klaviyo.com -> $code)" ;; *) red "proxy did NOT deny a.klaviyo.com (got '${code:-no response}')"; fail=1 ;; esac
+# Egress must stay locked: DENY for prod/Sticky/Klaviyo/Mailgun/Avalara/tfhcore/builder.io root, ALLOW only the
+# approved read-only hosts (see scripts/egress-check.sh).
+"$ROOT/scripts/egress-check.sh" || fail=1
 [ $fail -eq 0 ] && grn "health: OK" || { red "health: FAILED"; exit 1; }
