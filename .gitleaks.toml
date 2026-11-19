@@ -1,0 +1,24 @@
+# gitleaks config for tfh-local (PUBLIC repo). Default rules + the repo's own patterns.
+# Never add allow-list entries for REAL values; rephrase the text instead (see scripts/check-no-secrets.sh).
+title = "tfh-local gitleaks"
+
+[extend]
+useDefault = true
+
+[[rules]]
+id = "tfh-klaviyo-private-key"
+description = "Klaviyo private API key"
+regex = '''pk_[0-9a-f]{30,}'''
+
+[[rules]]
+id = "tfh-url-credentials"
+description = "Credentials embedded in a URL"
+regex = '''[a-z][a-z0-9+.-]*://[^/\s:@]+:[^/\s@$]{6,}@'''
+
+[allowlist]
+description = "Jira ticket keys (KEY=TFHFUNNEL-1234) and empty NAME= lines in .env.example are not secrets"
+regexTarget = "match"
+regexes = [
+  '''KEY=[A-Z][A-Z0-9]+-[0-9]+''',
+  '''KEY=[ \t]*\r?\n''',
+]

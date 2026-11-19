@@ -3,7 +3,7 @@ SHELL := /bin/bash
 .DEFAULT_GOAL := help
 export KEY BRANCH CONFIRM LOCAL_SRC REFRESH VECTOR
 
-.PHONY: help bootstrap refresh ticket up down health logs verify status pr reset preflight check-secrets config seed-auth prove-login prove-admin
+.PHONY: help bootstrap refresh ticket up down health logs verify status pr reset preflight check-secrets config test seed-auth prove-login prove-admin
 
 help: ## list targets
 	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  %-14s %s\n", $$1, $$2}'
@@ -52,6 +52,9 @@ pr: ## KEY=... [CONFIRM=1] dry-run by default; push + open PRs (never lands them
 
 reset: ## CONFIRM=1 delete LOCAL volumes only
 	@scripts/reset.sh
+
+test: ## run the shell tests in tests/ (no network; sandbox copies + dummy env only)
+	@set -e; for t in tests/test-*.sh; do bash "$$t"; done
 
 check-secrets: ## scan this repo for secrets (run before every commit)
 	@scripts/check-no-secrets.sh

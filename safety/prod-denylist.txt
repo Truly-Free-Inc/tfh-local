@@ -1,27 +1,25 @@
 # Production host patterns (POSIX ERE, matched case-insensitively against host names). preflight.sh refuses
-# if Sticky/TF hosts or any proxy/allowlist.txt entry matches. Sourced from tfh-automation config/envs.ts and
-# tf-api-cicd ingress/config host names. No secrets here.
+# if Sticky/TF hosts or any proxy/allowlist.txt entry matches. Suffix patterns only; no internal host names.
+# NOTE: the trulyfreehome.com suffix also denies any NON-prod TFH host; EXTERNALS=real would need a reviewed
+# narrowing here (offline mode, the default, needs none).
+# EVERY line must be ^...$ anchored with escaped dots (only \. , [..], .* or .+); preflight refuses otherwise.
 # TODO(Richard): add the PRODUCTION Sticky host and the PRODUCTION TF Composition API host.
-^(www\.)?trulyfreehome\.com$
-^member\.trulyfreehome\.com$
-^api\.trulyfreehome\.com$
-^tfapi\.trulyfreehome\.com$
-^proxy\.trulyfreehome\.com$
-^cdn\.trulyfreehome\.com$
-^funnels-cdn\.trulyfreehome\.com$
-^mg\.trulyfreehome\.com$
-^my4\.trulyfreehome\.com$
-^my4-admin-internal\.trulyfreehome\.com$
-^tf-apigateway\.trulyfreehome\.com$
-^my\.trulyfreehome\.com$
-^mygreenfills\.com$
+# All TFH production domains, by suffix (no individual internal host names in this PUBLIC repo).
+# Named hosts, if you need them, go in the gitignored safety/prod-denylist.local.txt (same format; also enforced).
+^(.*\.)?trulyfreehome\.com$
+^(.*\.)?mygreenfills\.com$
 # Any host with a "prod"/"production" label
-(^|[.-])prod(uction)?([.-]|$)
+^(.*[.-])?prod(uction)?([.-].*)?$
+# Sticky (any instance, incl. the limelightcrm.com legacy domain): the only known instance is the one prod uses.
+^(.*\.)?sticky\.io$
+^(.*\.)?limelightcrm\.com$
 # Never-allowed services (local stack must not talk to them at all)
-klaviyo\.com$
-amazonaws\.com$
-avalara\.(com|net)$
-(^|\.)infor\.com$
-inforcloudsuite\.com$
-syteline
-tfhcore
+^(.*\.)?klaviyo\.com$
+^(.*\.)?mailgun\.(net|com|org)$
+^(.*\.)?amazonaws\.com$
+^(.*\.)?avalara\.(com|net)$
+^(.*\.)?avatax\.com$
+^(.*\.)?infor\.com$
+^(.*\.)?inforcloudsuite\.com$
+^.*syteline.*$
+^.*tfhcore.*$

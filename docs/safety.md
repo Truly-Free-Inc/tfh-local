@@ -31,7 +31,7 @@ Never copy real `STICKY_*` / `TF_COMPOSITION_*` values into `.env` while `EXTERN
 ## How the stack enforces them
 | Guard | Where | What it does |
 |---|---|---|
-| Preflight | `scripts/preflight.sh` (runs before `make up` and `make verify`) | `EXTERNALS=offline`: see above. `EXTERNALS=real`: refuses (exit 1) unless STICKY_DOMAIN and TF_COMPOSITION_API_BASE_URL hosts are set, match `safety/nonprod-hosts.txt` and match nothing in `safety/prod-denylist.txt`; no Syteline/Infor, tfhcore or Avalara variable is non-empty (in `.env` or your shell); DB host is the local `postgres` container; APP_ENV is not production; every `proxy/allowlist.txt` entry is non-prod. |
+| Preflight | `scripts/preflight.sh` (runs before `make up` and `make verify`) | `EXTERNALS=offline`: see above. `EXTERNALS=real`: refuses (exit 1) unless STICKY_DOMAIN and TF_COMPOSITION_API_BASE_URL hosts are set, match `safety/nonprod-hosts.txt` and match nothing in `safety/prod-denylist.txt`; no Syteline/Infor, tfhcore or Avalara variable is non-empty (in `.env` or your shell); DB host is the local `postgres` container; APP_ENV is not production; every `proxy/allowlist.txt` entry is non-prod. Both modes: every pattern in the deny list, allow-lists and non-prod list must be `^...$` anchored with escaped dots (`tests/test-patterns.sh`). |
 | No direct internet | `docker-compose.yml` network `internal` (`internal: true`) | App containers cannot reach the internet at all. |
 | Read-only list | `proxy/readonly-allowlist.txt` | Builder.io content API (`cdn.builder.io`) only, approved by Michael 2026-11-19. Preflight refuses any entry not in its fixed `READONLY_APPROVED` set (both modes) or on the prod deny-list; Node apps refuse non-GET to it (scope below). Only public Builder keys are configured; preflight refuses any Builder private key. |
 | Egress allow-list | `proxy/` (tinyproxy, `FilterDefaultDeny Yes`) | The only way out. Empty in offline mode (denies everything; `make health` proves a denied request). Allows just the hosts in `proxy/allowlist.txt` (non-prod Sticky + TF). Everything else, including Klaviyo, AWS, and all prod hosts, is denied. |
@@ -61,3 +61,13 @@ Sentry, CloudWatch. Changes to these two files need Michael's review.
 ## If something looks wrong
 A non-test order, a prod host in a log, a flag that changed, a secret in output: **STOP**, do not retry, do
 not clean up on your own, report to Michael with the run directory (`.state/runs/...`).
+
+## Hardening checks (M5h)
+- Deny/allow pattern files must be `^...$` anchored with escaped dots (preflight refuses otherwise). Prod TFH
+  domains are denied by suffix; named internal hosts belong only in the gitignored `safety/prod-denylist.local.txt`.
+  Git history before this change still contains some named hosts (history is never rewritten).
+- `make pr` pushes only via `safe_push` (never main/master/develop/stage/the PR base).
+- Compose credentials have no defaults; `make bootstrap` generates missing ones into `.env` (never printed).
+- `make check-secrets` runs gitleaks (full history + staged) when installed; CI runs it on every PR.
+- `make health` proves egress: 403 for prod/Sticky/Klaviyo/Mailgun/Avalara/tfhcore/builder.io root, 200 only for
+  the read-only allow-list. `make test` runs the offline shell tests in `tests/`.

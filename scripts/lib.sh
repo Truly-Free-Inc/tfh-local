@@ -42,6 +42,28 @@ require_key() {
   [[ "$KEY" =~ $KEY_RE ]] || die "KEY '$KEY' is not a Jira key like TFHFUNNEL-1234"
 }
 
+# safe_push <repo_dir> <branch> <pr_base>: push <branch> to origin/<branch> (explicit refspec, no force), but
+# REFUSE when the current branch or the target ref is main, master, develop, stage or the PR base branch.
+# Protected-branch pushes are how an AI "lands" work without review; this makes that impossible from tfh-local.
+PROTECTED_BRANCHES="main master develop stage"
+safe_push() {
+  local d="$1" b="$2" base="$3" cur p
+  cur="$(git -C "$d" rev-parse --abbrev-ref HEAD)"
+  [ -n "$b" ] && [ -n "$base" ] || { red "safe_push: branch and base are required"; return 1; }
+  [ "$cur" = "$b" ] || { red "REFUSED: $d is on '$cur', not '$b'"; return 1; }
+  for p in $PROTECTED_BRANCHES "$base" HEAD; do
+    if [ "$b" = "$p" ] || [ "$cur" = "$p" ]; then
+      red "REFUSED: will not push protected branch '$b' (current '$cur', PR base '$base') in $d"; return 1
+    fi
+  done
+  case "$b" in refs/*|*:*|+*|-*) red "REFUSED: unexpected ref syntax '$b'"; return 1 ;; esac
+  git -C "$d" push -u origin "refs/heads/$b:refs/heads/$b"
+}
+
+# key_grep <KEY>: Playwright --grep (JS RegExp) matching the tag @KEY as a whole ticket key, so @TFHFUNNEL-12
+# does not also select @TFHFUNNEL-123. Left side is fixed by the '@'; right side must not continue with a digit.
+key_grep() { [[ "$1" =~ $KEY_RE ]] || return 1; printf '@%s(?![0-9])' "$1"; }
+
 is_dirty() { [ -n "$(git -C "$1" status --porcelain)" ]; }
 
 # Host part of a URL or bare host: strip scheme, path, port, userinfo; lowercase.
@@ -52,6 +74,18 @@ host_of() {
 
 # Non-comment, non-empty lines of a pattern file.
 patterns() { grep -vE '^[[:space:]]*(#|$)' "$1" || true; }
+
+# pattern_anchored <ERE>: true if the host pattern is ^...$ anchored and every literal dot is escaped.
+# Allowed unescaped dots: inside a bracket expression ([.-]) or as a wildcard (.* / .+). Anything else
+# (e.g. "klaviyo.com$", "^cdn.builder.io$") is refused: an unanchored/unescaped pattern can match far more
+# (or far less) than the author meant, which is exactly how deny lists leak.
+pattern_anchored() {
+  local p="$1" s
+  [[ "$p" == ^* && "$p" == *\$ ]] || return 1
+  s="$(printf '%s' "$p" | sed -E 's/\[[^]]*\]//g; s/\\\.//g; s/\.[*+]//g')"
+  case "$s" in *.*) return 1 ;; esac
+  return 0
+}
 
 dc() { docker compose --project-directory "$ROOT" -f "$ROOT/docker-compose.yml" "$@"; }
 

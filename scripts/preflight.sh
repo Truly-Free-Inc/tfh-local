@@ -14,6 +14,14 @@ load_env
 
 NONPROD="$ROOT/safety/nonprod-hosts.txt"
 DENY="$ROOT/safety/prod-denylist.txt"
+# Optional gitignored extra deny list (named internal hosts kept out of the public repo). Enforced the same way.
+DENY_LOCAL="$ROOT/safety/prod-denylist.local.txt"
+if [ -f "$DENY_LOCAL" ]; then
+  DENY_ALL="$(mktemp)"; trap 'rm -f "$DENY_ALL"' EXIT
+  cat "$DENY" "$DENY_LOCAL" > "$DENY_ALL"; DENY_FILES=("$DENY" "$DENY_LOCAL"); DENY="$DENY_ALL"
+else
+  DENY_FILES=("$DENY")
+fi
 ALLOW="$ROOT/proxy/allowlist.txt"
 # Read-only third-party content hosts (Builder.io). Separate from the Sticky/TF allow-list; fixed approved set.
 READONLY="$ROOT/proxy/readonly-allowlist.txt"
@@ -23,6 +31,15 @@ matches() { # matches <host> <patternfile>
   local pats; pats="$(patterns "$2")"; [ -n "$pats" ] || return 1
   printf '%s\n' "$1" | grep -Eiq -f <(printf '%s\n' "$pats")
 }
+
+# 0a. Pattern hygiene: every regex in the deny list, the egress allow-lists and the non-prod list must be
+#     ^...$ anchored with escaped dots (see lib.sh pattern_anchored). Applies in both EXTERNALS modes.
+for pf in "${DENY_FILES[@]}" "$ALLOW" "$NONPROD" "$ROOT/proxy/readonly-allowlist.txt"; do
+  [ -f "$pf" ] || continue
+  while IFS= read -r pat; do
+    pattern_anchored "$pat" || bad "${pf#$ROOT/} entry '$pat' is not anchored (^...\$) with escaped dots"
+  done < <(patterns "$pf")
+done
 
 # 0. EXTERNALS mode. offline (default) = Sticky/TF must be impossible to reach; real = non-prod hosts via the proxy.
 EXTERNALS="$(printf '%s' "${EXTERNALS:-offline}" | tr '[:upper:]' '[:lower:]')"

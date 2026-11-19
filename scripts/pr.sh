@@ -23,6 +23,7 @@ while read -r name url def base role; do
   d="$APPS/$name"; [ -e "$d/.git" ] || continue
   b="$(git -C "$d" rev-parse --abbrev-ref HEAD)"
   case "$b" in "$def"|"tfh-local/$def"|HEAD) continue ;; esac
+  case " $PROTECTED_BRANCHES $base " in *" $b "*) ylw "  $name: on protected branch '$b'; never pushed; skip"; continue ;; esac
   git -C "$d" fetch -q origin "$base"
   ahead="$(git -C "$d" rev-list --count "origin/$base..HEAD")"
   [ "$ahead" -gt 0 ] || { echo "  $name: $b has no commits ahead of $base; skip"; continue; }
@@ -41,7 +42,7 @@ while read -r name url def base role; do
   planned=1
   echo "  $name: push $b; PR $b -> $base (body: $body)"
   [ "$CONFIRM" = "1" ] || continue
-  git -C "$d" push -u origin "$b"
+  safe_push "$d" "$b" "$base" || die "$name: push refused (see above)"
   case "$url" in
     *github.com*)
       if (cd "$d" && gh pr view "$b" --json url -q .url >/dev/null 2>&1); then
