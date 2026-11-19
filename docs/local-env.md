@@ -118,3 +118,24 @@ Gate tag: `@gate` (`npm run test:gate` = `--grep @gate --grep-invert @quarantine
   Basic auth. `make bootstrap` generates `TF_API_BASIC_AUTH_USERNAME/PASSWORD` into `.env` (local-only values); compose
   passes them to tf-api and, as `BASIC_AUTH_USERNAME/PASSWORD` (server env only), to the three Next.js apps; `make verify`
   exports `TF_API_BASIC_AUTH=user:password` for tfh-automation. Values are never printed.
+
+## Gate status in tfh-local (M6, Nov 19 2026) and what is skipped on purpose
+`make verify` exports `BUILDER_PUBLIC_API_KEY` (the public read-only key from `.env`) and `TF_API_BASIC_AUTH` to the
+suite. tfh-automation skips, only when `TARGET_ENV=local`, the tests whose answer comes from a service tfh-local keeps
+offline (`lib/local-offline.ts`, reason "requires external X (offline in tfh-local)"):
+- api/tax: Avalara (tax). api/address-validation: Avalara/Google/USPS.
+- storefront/image-cdn: product images go through funnels' `/_next/image`, which fetches the prod image CDN server-side
+  (container egress blocked by design).
+- funnel/checkout-totals (TF-processor check) and cross-browser/ios-forms (card/CVV fields): TF / Spreedly payment iframes.
+- platform/cf-geo: Cloudflare.
+In local runs the suite also blocks the live Klaviyo, Amazon ads, Northbeam and the prod track pixel in the browser:
+they hung the page `load` event and must not receive events from a local run.
+Other skips are by design of the suite (admin = stage only, orders need the test-customer secrets + Sticky).
+
+Known local failures (not offline externals):
+- storefront/page-health `/` and storefront/dropoff-upsell: the funnels feature-flag proxy answers 500 for every flag
+  missing locally (`e.error?.includes is not a function` on tf-api's structured 404). The local flag seed is a
+  placeholder until Richard/Michael provide the approved snapshot (seed/sql/10_feature_flags.sql). Plus `/_next/image`
+  500s for prod-CDN images (above).
+- storefront/cart-checkout-totals: drawer subtotal applies the 10% volume tier ($17.95), checkout shows list ($19.95).
+  Root cause not confirmed locally.

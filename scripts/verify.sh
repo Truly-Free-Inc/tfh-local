@@ -40,7 +40,8 @@ run_suite() { # label grep [grep-invert]
   # Credentials are exported (shell builtin), not passed as `env NAME=value` argv (visible in `ps`).
   ( cd "$SUITE" && export MEMBER_PORTAL_USER="${TEST_CUSTOMER_PORTAL_EMAIL:-}" \
       MEMBER_PORTAL_PASSWORD="${TEST_CUSTOMER_PORTAL_PASSWORD:-}" \
-      TF_API_BASIC_AUTH="${TF_API_BASIC_AUTH_USERNAME:-}:${TF_API_BASIC_AUTH_PASSWORD:-}" && \
+      TF_API_BASIC_AUTH="${TF_API_BASIC_AUTH_USERNAME:-}:${TF_API_BASIC_AUTH_PASSWORD:-}" \
+      BUILDER_PUBLIC_API_KEY="${LOCAL_BUILDER_PUBLIC_KEY_FUNNEL:-}" && \
     env TARGET_ENV=local TZ=UTC TFR_RETRIES=0 \
       PLAYWRIGHT_HTML_OUTPUT_DIR="$RUN/$label/html" PLAYWRIGHT_HTML_REPORT="$RUN/$label/html" PLAYWRIGHT_HTML_OPEN=never \
       PLAYWRIGHT_JSON_OUTPUT_NAME="$RUN/$label/results.json" \
