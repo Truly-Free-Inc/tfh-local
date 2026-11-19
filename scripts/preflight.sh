@@ -15,6 +15,9 @@ load_env
 NONPROD="$ROOT/safety/nonprod-hosts.txt"
 DENY="$ROOT/safety/prod-denylist.txt"
 ALLOW="$ROOT/proxy/allowlist.txt"
+# Read-only third-party content hosts (Builder.io). Separate from the Sticky/TF allow-list; fixed approved set.
+READONLY="$ROOT/proxy/readonly-allowlist.txt"
+READONLY_APPROVED='^cdn\.builder\.io$'
 
 matches() { # matches <host> <patternfile>
   local pats; pats="$(patterns "$2")"; [ -n "$pats" ] || return 1
@@ -41,8 +44,8 @@ if [ "$EXTERNALS" = "offline" ]; then
   # safety/nonprod-hosts.txt must be unchanged from the committed version and carry no entries.
   [ -z "$(patterns "$NONPROD")" ] || bad "safety/nonprod-hosts.txt has entries. EXTERNALS=offline requires none."
   if git -C "$ROOT" rev-parse --git-dir >/dev/null 2>&1; then
-    git -C "$ROOT" diff --quiet HEAD -- safety/nonprod-hosts.txt proxy/allowlist.txt \
-      || bad "safety/nonprod-hosts.txt or proxy/allowlist.txt has uncommitted changes. EXTERNALS=offline requires them unchanged."
+    git -C "$ROOT" diff --quiet HEAD -- safety/nonprod-hosts.txt proxy/allowlist.txt proxy/readonly-allowlist.txt \
+      || bad "safety/nonprod-hosts.txt, proxy/allowlist.txt or proxy/readonly-allowlist.txt has uncommitted changes. EXTERNALS=offline requires them unchanged."
   fi
 else
   # 1. Sticky + TF hosts: set, on the non-prod allow-list, not on the prod deny-list.
@@ -61,6 +64,16 @@ else
     matches "$lit" "$DENY"    && bad "proxy/allowlist.txt entry '$pat' matches the prod deny-list"
     matches "$lit" "$NONPROD" || bad "proxy/allowlist.txt entry '$pat' is not in safety/nonprod-hosts.txt"
   done < <(patterns "$ALLOW")
+fi
+
+# 5b. Read-only list (both modes): every entry must be EXACTLY one of READONLY_APPROVED and miss the prod deny-list.
+#     Sticky/TF/Klaviyo/AWS/prod hosts can never be routed through it.
+if [ -f "$READONLY" ]; then
+  while IFS= read -r pat; do
+    printf '%s\n' "$READONLY_APPROVED" | grep -qxF -- "$pat" || bad "proxy/readonly-allowlist.txt entry '$pat' is not an approved read-only host (scripts/preflight.sh READONLY_APPROVED)"
+    lit="$(printf '%s' "$pat" | sed -E 's/^\^//; s/\$$//; s/\\\././g')"
+    matches "$lit" "$DENY" && bad "proxy/readonly-allowlist.txt entry '$pat' matches the prod deny-list"
+  done < <(patterns "$READONLY")
 fi
 
 # 2. Forbidden integrations: must be empty/absent in .env AND in the calling shell.
