@@ -1,0 +1,27 @@
+# Production host patterns (POSIX ERE, matched case-insensitively against host names). preflight.sh refuses
+# if Sticky/TF hosts or any proxy/allowlist.txt entry matches. Sourced from tfh-automation config/envs.ts and
+# tf-api-cicd ingress/config host names. No secrets here.
+# TODO(Richard): add the PRODUCTION Sticky host and the PRODUCTION TF Composition API host.
+^(www\.)?trulyfreehome\.com$
+^member\.trulyfreehome\.com$
+^api\.trulyfreehome\.com$
+^tfapi\.trulyfreehome\.com$
+^proxy\.trulyfreehome\.com$
+^cdn\.trulyfreehome\.com$
+^funnels-cdn\.trulyfreehome\.com$
+^mg\.trulyfreehome\.com$
+^my4\.trulyfreehome\.com$
+^my4-admin-internal\.trulyfreehome\.com$
+^tf-apigateway\.trulyfreehome\.com$
+^my\.trulyfreehome\.com$
+^mygreenfills\.com$
+# Any host with a "prod"/"production" label
+(^|[.-])prod(uction)?([.-]|$)
+# Never-allowed services (local stack must not talk to them at all)
+klaviyo\.com$
+amazonaws\.com$
+avalara\.(com|net)$
+(^|\.)infor\.com$
+inforcloudsuite\.com$
+syteline
+tfhcore

@@ -1,0 +1,10 @@
+# tfh-local egress allow-list (tinyproxy, POSIX ERE on host name). DEFAULT DENY: anything not listed is blocked.
+#
+# ONLY the NON-PROD Sticky host and the NON-PROD TF Composition API host may be added here.
+# NEVER add a production host. NEVER add Klaviyo (use the recorder), AWS/S3 (use MinIO), Syteline/Infor,
+# tfhcore, Avalara, Sentry, CloudWatch. scripts/preflight.sh checks this file against safety/prod-denylist.txt
+# and refuses to start on any overlap.
+#
+# Fill in from the non-prod values in your .env (hosts only, anchored), e.g.:
+#   ^example-nonprod-sticky\.example\.com$
+# TODO(Richard): confirm the non-prod Sticky and TF hosts used by develop/stage.

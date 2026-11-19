@@ -1,0 +1,39 @@
+# App repos used by tfh-local. `make bootstrap` clones each into ./apps/<name>/ (never committed).
+# pr_base: branch PRs are opened against. role: what the repo is in the local stack.
+# Parsed by scripts/lib.sh (simple "key: value" lines; keep the format flat).
+repos:
+  - name: tf-api
+    url: git@bitbucket.org:truly-free/tf-api.git
+    default_branch: develop
+    pr_base: develop
+    role: app        # Go API + Flyway migrations (wired)
+  - name: memberportal
+    url: git@bitbucket.org:truly-free/memberportal.git
+    default_branch: develop
+    pr_base: develop
+    role: app        # Next.js member portal (stub this pass)
+  - name: tf-apigateway
+    url: git@bitbucket.org:truly-free/tf-apigateway.git
+    default_branch: develop
+    pr_base: develop
+    role: app        # Go gateway over Ory Kratos/Keto (stub this pass)
+  - name: nextjs-campaign-admin-panel
+    url: git@bitbucket.org:truly-free/nextjs-campaign-admin-panel.git
+    default_branch: develop
+    pr_base: develop
+    role: app        # admin panel (stub this pass; no Dockerfile in repo)
+  - name: nextjs-aff-landing-pages
+    url: git@bitbucket.org:truly-free/nextjs-aff-landing-pages.git
+    default_branch: develop
+    pr_base: develop
+    role: app        # funnels (stub this pass)
+  - name: vector-search-trulyfreehome
+    url: git@github.com:Truly-Free-Inc/vector-search-trulyfreehome.git
+    default_branch: main
+    pr_base: main
+    role: app        # POC, profile `vector` (stub this pass). No develop branch.
+  - name: tfh-automation
+    url: git@github.com:Truly-Free-Inc/tfh-automation.git
+    default_branch: main
+    pr_base: main
+    role: tests      # Playwright suite, runs on the HOST. No develop branch.

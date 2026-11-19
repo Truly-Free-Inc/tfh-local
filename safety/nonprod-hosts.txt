@@ -1,0 +1,4 @@
+# Non-prod hosts allowed for STICKY_DOMAIN and TF_COMPOSITION_API_BASE_URL (host part). POSIX ERE, one per line.
+# preflight.sh REFUSES to start unless both hosts match a line here AND match nothing in prod-denylist.txt.
+# Intentionally EMPTY until confirmed: the stack will not start until a reviewer adds the non-prod hosts.
+# TODO(Richard): add the non-prod Sticky host and the non-prod TF Composition API host (anchored, e.g. ^host\.example$).

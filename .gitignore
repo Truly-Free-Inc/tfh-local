@@ -1,0 +1,14 @@
+# App checkouts (cloned by `make bootstrap`) - NEVER commit
+apps/
+# Local state: ticket map, verify runs, reports
+.state/
+# Secrets and local overrides
+.env
+*.local
+.env.*
+!.env.example
+# Data volumes / recorder output
+data/
+klaviyo-recorder/data/
+*.log
+.DS_Store

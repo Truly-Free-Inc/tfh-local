@@ -1,0 +1,280 @@
+# tfh-local: local TFH stack. See README.md (SAFETY section first).
+#
+# Run via `make up` (runs scripts/preflight.sh first). Do not run `docker compose up` directly.
+# Validate:  docker compose config -q   (works before apps/ exist and with .env from .env.example)
+#
+# Networks:
+#   internal : app containers. `internal: true` = NO direct internet. Outbound only via `proxy` (allow-list).
+#   egress   : only `proxy` sits here; it can reach the internet, but tinyproxy default-denies every host
+#              that is not in proxy/allowlist.txt (non-prod Sticky + TF only).
+#   edge     : only `ingress` sits here; it publishes host ports (Docker cannot publish ports of containers
+#              that are only on an internal network) and forwards TCP to services on `internal`.
+# Image builds use the Docker daemon's network, not these runtime networks, so registries (Go modules,
+# Docker Hub, apk/apt) work at build time while running containers stay locked down.
+#
+# Profiles: default = core (wired). `stub` = not yet wired (TODO). `vector` = vector search. `cron` = refuses.
+
+name: ${COMPOSE_PROJECT_NAME:-tfh-local}
+
+x-proxy-env: &proxy-env
+  HTTP_PROXY: http://proxy:8888
+  HTTPS_PROXY: http://proxy:8888
+  http_proxy: http://proxy:8888
+  https_proxy: http://proxy:8888
+  NO_PROXY: localhost,127.0.0.1,postgres,redis,minio,mailpit,klaviyo-recorder,tf-api
+  no_proxy: localhost,127.0.0.1,postgres,redis,minio,mailpit,klaviyo-recorder,tf-api
+
+x-stub: &stub
+  image: alpine:3.20
+  profiles: ["stub"]
+  restart: "no"
+  networks: [internal]
+  command: ["sh", "-c", "echo 'STUB: not wired yet (see docker-compose.yml TODO). Refusing to run.' >&2; exit 1"]
+
+networks:
+  internal:
+    internal: true
+  egress: {}
+  edge: {}
+
+volumes:
+  postgres-data: {}
+  redis-data: {}
+  minio-data: {}
+  klaviyo-data: {}
+
+services:
+  # ---------------------------------------------------------------- core (wired)
+  postgres:
+    image: postgres:17.4
+    restart: unless-stopped
+    entrypoint: ["/bin/bash", "/init-wrapper.sh"]
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-tfh_local_admin}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-tfh_local_admin_pw}
+      APP_DB_USER: ${APP_DB_USER:-tf_api_local}
+      APP_DB_PASS: ${APP_DB_PASS:-tf_api_local_pw}
+      APP_DB_NAME: ${APP_DB_NAME:-tf_api_local}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      # Mirrors apps/tf-api/docker-compose.yml (same init-wrapper + db-bootstrap).
+      - ./apps/tf-api/dockercompose_init/init-wrapper.sh:/init-wrapper.sh:ro
+      - ./apps/tf-api/db-bootstrap/sql/01_app_init.sql:/docker-entrypoint-initdb.d/03_app_init.sql:ro
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "${POSTGRES_USER:-tfh_local_admin}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    networks: [internal]
+
+  redis:
+    image: redis:7.2-alpine
+    restart: unless-stopped
+    command: ["redis-server"]
+    volumes: [redis-data:/data]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    networks: [internal]
+
+  flyway:
+    build:
+      context: ./apps/tf-api
+      dockerfile: .cicd/docker/Dockerfile.flyway   # tf-api's own Flyway image (flyway/sql + undo)
+    restart: "no"
+    environment:
+      JDBC_URL: jdbc:postgresql://postgres:5432/${APP_DB_NAME:-tf_api_local}
+      DB_USER: ${APP_DB_USER:-tf_api_local}
+      DB_PASSWORD: ${APP_DB_PASS:-tf_api_local_pw}
+    depends_on:
+      postgres: { condition: service_healthy }
+    networks: [internal]
+
+  # Feature flags + test-only data. Runs ONCE per fresh DB (marker table), never updates flags afterwards.
+  seed:
+    image: postgres:17.4
+    restart: "no"
+    entrypoint: ["/bin/bash", "/seed/run-seed.sh"]
+    environment:
+      PGHOST: postgres
+      PGUSER: ${APP_DB_USER:-tf_api_local}
+      PGPASSWORD: ${APP_DB_PASS:-tf_api_local_pw}
+      PGDATABASE: ${APP_DB_NAME:-tf_api_local}
+    volumes: ["./seed:/seed:ro"]
+    depends_on:
+      flyway: { condition: service_completed_successfully }
+    networks: [internal]
+
+  tf-api:
+    build:
+      context: ./apps/tf-api
+      dockerfile: ../../docker/tf-api.Dockerfile   # multi-stage: Go build from src/ -> debian-slim
+    image: tfh-local/tf-api:local
+    restart: unless-stopped
+    environment:
+      <<: *proxy-env
+      PORT: "3000"
+      APP_ENV: ${APP_ENV:-local}
+      DB_HOST: postgres
+      DB_HOST_RO: postgres
+      DB_PORT: "5432"
+      DB_USER: ${APP_DB_USER:-tf_api_local}
+      DB_PASSWORD: ${APP_DB_PASS:-tf_api_local_pw}
+      DB_NAME: ${APP_DB_NAME:-tf_api_local}
+      DB_SSL_MODE: disable
+      REDIS_HOST: redis
+      REDIS_HOST_RO: redis
+      REDIS_PORT: "6379"
+      REDIS_DB: "0"
+      # Real NON-PROD Sticky / TF, test orders only. Preflight enforces the host allow-list.
+      STICKY_DOMAIN: ${STICKY_DOMAIN:-}
+      STICKY_API_EXT: ${STICKY_API_EXT:-}
+      STICKY_API_EXT_2: ${STICKY_API_EXT_2:-}
+      STICKY_APP_KEY: ${STICKY_APP_KEY:-}
+      STICKY_USERNAME: ${STICKY_USERNAME:-}
+      STICKY_PASSWORD: ${STICKY_PASSWORD:-}
+      STICKY_WEBHOOK_USERNAME: ${STICKY_WEBHOOK_USERNAME:-}
+      STICKY_WEBHOOK_PASSWORD: ${STICKY_WEBHOOK_PASSWORD:-}
+      TF_COMPOSITION_API_BASE_URL: ${TF_COMPOSITION_API_BASE_URL:-}
+      TF_COMPOSITION_API_TOKEN: ${TF_COMPOSITION_API_TOKEN:-}
+      TF_SELLING_PLAN_ID: ${TF_SELLING_PLAN_ID:-}
+      # S3 -> MinIO (AWS SDK v2 honours AWS_ENDPOINT_URL; path-style addressing TODO, see docs/local-env.md)
+      AWS_ENDPOINT_URL: http://minio:9000
+      AWS_KEY: ${MINIO_ROOT_USER:-tfh-local-minio}
+      AWS_SECRET: ${MINIO_ROOT_PASSWORD:-tfh-local-minio-pw}
+      AWS_REGION: ${AWS_REGION:-us-east-1}
+      AWS_BUCKET: ${AWS_BUCKET:-}
+      AWS_CDN_DOMAIN: ${AWS_CDN_DOMAIN:-}
+      AWS_IMAGE_PATH: ${AWS_IMAGE_PATH:-}
+      AWS_PRESIGNED_URL_EXPIRY_MINUTES: ${AWS_PRESIGNED_URL_EXPIRY_MINUTES:-15}
+      CATALOG_S3_BUCKET: ${CATALOG_S3_BUCKET:-}
+      CATALOG_S3_KEY: ${CATALOG_S3_KEY:-}
+      SEARCH_MODEL_S3_BUCKET: ${SEARCH_MODEL_S3_BUCKET:-}
+      SEARCH_MODEL_S3_KEY: ${SEARCH_MODEL_S3_KEY:-}
+      SEARCH_MODEL_S3_TMP_KEY: ${SEARCH_MODEL_S3_TMP_KEY:-}
+      SITEMAP_S3_BUCKET: ${SITEMAP_S3_BUCKET:-}
+      SITEMAP_S3_KEY: ${SITEMAP_S3_KEY:-}
+      YOTPO_S3_BUCKET: ${YOTPO_S3_BUCKET:-}
+      YOTPO_S3_KEY: ${YOTPO_S3_KEY:-}
+      # Klaviyo: tf-api's base URL is a hard-coded constant (constants.KlaviyoAPIBaseURL). Until an env-override
+      # PR lands, Klaviyo calls from tf-api go to the proxy and are DENIED (not in allow-list). Recorder below.
+      KLAVIYO_PUBLIC_KEY: ${KLAVIYO_PUBLIC_KEY:-}
+      KLAVIYO_PRIVATE_KEY: ${KLAVIYO_PRIVATE_KEY:-}
+      KLAVIYO_LIST_ID: ${KLAVIYO_LIST_ID:-}
+      KLAVIYO_LIST_ID_2: ${KLAVIYO_LIST_ID_2:-}
+      KLAVIYO_LIST_ID_3: ${KLAVIYO_LIST_ID_3:-}
+      KLAVIYO_LIST_ID_4: ${KLAVIYO_LIST_ID_4:-}
+      BUILDER_API_KEY: ${BUILDER_API_KEY:-}
+      BUILDER_API_URL: ${BUILDER_API_URL:-}
+      # Disabled locally (explicitly empty).
+      SENTRY_DSN: ""
+      CLOUDWATCH_LOG_GROUP: ""
+      CLOUDWATCH_LOG_STREAM: ""
+      FACEBOOK_ACCESS_TOKEN: ""
+      FACEBOOK_PIXEL_ID: ""
+      CUSTOMERLABS_WEBHOOK_URL: ""
+      # NEVER set: SYTE_LINE_* (Syteline/Infor), TFH_CORE_* / TFHCORE_* (tfhcore OUT), AVALARA_* (OUT).
+    depends_on:
+      seed: { condition: service_completed_successfully }
+      redis: { condition: service_healthy }
+      proxy: { condition: service_started }
+    networks: [internal]
+
+  # Egress allow-list proxy: default deny. Only hosts in proxy/allowlist.txt (non-prod Sticky + TF).
+  proxy:
+    build: ./proxy
+    restart: unless-stopped
+    volumes:
+      - ./proxy/allowlist.txt:/etc/tinyproxy/allowlist.txt:ro
+    networks: [internal, egress]
+
+  # Host port publishing for services on the internal network (TCP passthrough, nginx stream).
+  ingress:
+    image: nginx:1.27-alpine
+    restart: unless-stopped
+    volumes:
+      - ./ingress/nginx.conf:/etc/nginx/nginx.conf:ro
+    ports:
+      - "127.0.0.1:${POSTGRES_HOST_PORT:-15432}:15432"
+      - "127.0.0.1:${REDIS_HOST_PORT:-16379}:16379"
+      - "127.0.0.1:${TF_API_HOST_PORT:-13000}:13000"
+      - "127.0.0.1:${MAILPIT_UI_HOST_PORT:-18025}:18025"
+      - "127.0.0.1:${MAILPIT_SMTP_HOST_PORT:-11025}:11025"
+      - "127.0.0.1:${MINIO_API_HOST_PORT:-19000}:19000"
+      - "127.0.0.1:${MINIO_CONSOLE_HOST_PORT:-19001}:19001"
+      - "127.0.0.1:${KLAVIYO_RECORDER_HOST_PORT:-18090}:18090"
+    networks: [internal, edge]
+
+  mailpit:
+    image: axllent/mailpit:v1.21
+    restart: unless-stopped
+    networks: [internal]
+
+  minio:
+    image: minio/minio:RELEASE.2025-04-22T22-12-26Z
+    restart: unless-stopped
+    command: ["server", "/data", "--console-address", ":9001"]
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-tfh-local-minio}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-tfh-local-minio-pw}
+    volumes: [minio-data:/data]
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    networks: [internal]
+
+  minio-init:
+    image: minio/mc:RELEASE.2025-04-16T18-13-26Z
+    restart: "no"
+    entrypoint: ["/bin/sh", "/minio/init-buckets.sh"]
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-tfh-local-minio}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-tfh-local-minio-pw}
+      BUCKETS: "${AWS_BUCKET:-} ${CATALOG_S3_BUCKET:-} ${SEARCH_MODEL_S3_BUCKET:-} ${SITEMAP_S3_BUCKET:-} ${YOTPO_S3_BUCKET:-}"
+    volumes: ["./minio:/minio:ro"]
+    depends_on:
+      minio: { condition: service_healthy }
+    networks: [internal]
+
+  klaviyo-recorder:
+    build: ./klaviyo-recorder
+    restart: unless-stopped
+    environment:
+      RECORDER_LOG: /data/calls.jsonl
+    volumes: [klaviyo-data:/data]
+    networks: [internal]
+
+  # ---------------------------------------------------------------- stubs (TODO, profile `stub`)
+  # TODO(memberportal): build from apps/memberportal (.cicd/docker/Dockerfile or Dockerfile.dev), port 3000 ->
+  #   ${MEMBERPORTAL_HOST_PORT:-13001}; TFH_API_DOMAIN=http://tf-api:3000; KLAVIYO_BASE_URL=http://klaviyo-recorder:8090.
+  #   Remaining tfhcore calls (address validate, search, logger, ...) will fail locally until moved to tf-api.
+  memberportal: *stub
+  # TODO(tf-apigateway): Dockerfile.api from apps/tf-apigateway; KRATOS_*/KETO_* URLs; DSN to gateway-postgres.
+  tf-apigateway: *stub
+  # TODO(kratos): oryd/kratos:v1.3.1 + migrate job; config from apps/tf-apigateway; SMTP -> mailpit:1025.
+  kratos: *stub
+  # TODO(keto): oryd/keto:v0.12.0-alpha.0 + migrate job.
+  keto: *stub
+  # TODO(gateway-postgres): postgres:15 for Kratos/Keto/gateway (separate from tf-api DB).
+  gateway-postgres: *stub
+  # TODO(admin-panel): new docker/admin-panel.Dockerfile (repo has none); TF_ADMIN_API_URL=http://tf-api:3000.
+  admin-panel: *stub
+  # TODO(aff-landing-pages): apps/nextjs-aff-landing-pages/Dockerfile exists; wire TF_API_DOMAIN, Kratos URLs.
+  aff-landing-pages: *stub
+
+  vector-search:
+    <<: *stub
+    profiles: ["vector"]
+    # TODO(vector-search): new docker/vector-search.Dockerfile (python, uvicorn app.main:app --port 8077).
+
+  # ---------------------------------------------------------------- cron (refuses; see cron/README.md)
+  cron:
+    image: alpine:3.20
+    profiles: ["cron"]
+    restart: "no"
+    networks: [internal]
+    command: ["sh", "-c", "echo 'REFUSED: local/stage cron runs are pending discussion with Michael. See cron/README.md.' >&2; exit 1"]

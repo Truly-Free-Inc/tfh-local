@@ -1,0 +1,69 @@
+#!/usr/bin/env bash
+# Shared helpers for tfh-local scripts. Source it: `. "$(dirname "$0")/lib.sh"`.
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+APPS="$ROOT/apps"
+STATE="$ROOT/.state"
+KEY_RE='^[A-Z][A-Z0-9]+-[0-9]+$'
+
+red()  { printf '\033[1;31m%s\033[0m\n' "$*" >&2; }
+grn()  { printf '\033[1;32m%s\033[0m\n' "$*"; }
+ylw()  { printf '\033[1;33m%s\033[0m\n' "$*" >&2; }
+die()  { red "ERROR: $*"; exit 1; }
+
+# Read .env as data (no eval / no command execution). Exports KEY=VALUE lines; strips matching quotes.
+load_env() {
+  local f="$ROOT/.env" line k v
+  [ -f "$f" ] || return 0
+  while IFS= read -r line || [ -n "$line" ]; do
+    [[ "$line" =~ ^[[:space:]]*(#|$) ]] && continue
+    [[ "$line" =~ ^[[:space:]]*([A-Za-z_][A-Za-z0-9_]*)=(.*)$ ]] || continue
+    k="${BASH_REMATCH[1]}"; v="${BASH_REMATCH[2]}"
+    v="${v%\"}"; v="${v#\"}"; v="${v%\'}"; v="${v#\'}"
+    export "$k=$v"
+  done < "$f"
+}
+
+# Print "name url default_branch pr_base role" per repo from repos.yaml.
+repos() {
+  awk '
+    /^[[:space:]]*- name:/ { if (n) print n, u, d, p, r; n=$3; u=d=p=r="" }
+    /^[[:space:]]*url:/            { u=$2 }
+    /^[[:space:]]*default_branch:/ { d=$2 }
+    /^[[:space:]]*pr_base:/        { p=$2 }
+    /^[[:space:]]*role:/           { r=$2 }
+    END { if (n) print n, u, d, p, r }
+  ' "$ROOT/repos.yaml"
+}
+
+require_key() {
+  [ -n "${KEY:-}" ] || die "KEY is required (e.g. KEY=TFHFUNNEL-1234)"
+  [[ "$KEY" =~ $KEY_RE ]] || die "KEY '$KEY' is not a Jira key like TFHFUNNEL-1234"
+}
+
+is_dirty() { [ -n "$(git -C "$1" status --porcelain)" ]; }
+
+# Host part of a URL or bare host: strip scheme, path, port, userinfo; lowercase.
+host_of() {
+  local h="$1"; h="${h#*://}"; h="${h%%/*}"; h="${h##*@}"; h="${h%%:*}"
+  printf '%s' "$h" | tr '[:upper:]' '[:lower:]'
+}
+
+# Non-comment, non-empty lines of a pattern file.
+patterns() { grep -vE '^[[:space:]]*(#|$)' "$1" || true; }
+
+dc() { docker compose --project-directory "$ROOT" -f "$ROOT/docker-compose.yml" "$@"; }
+
+# Current branch -> sha map of all checked-out repos, as JSON object lines.
+repo_shas_json() {
+  local first=1 name url def base role dir
+  printf '{'
+  while read -r name url def base role; do
+    dir="$APPS/$name"; [ -d "$dir/.git" ] || [ -f "$dir/.git" ] || continue
+    [ $first -eq 1 ] || printf ','; first=0
+    printf '"%s":{"branch":"%s","sha":"%s"}' "$name" \
+      "$(git -C "$dir" rev-parse --abbrev-ref HEAD)" "$(git -C "$dir" rev-parse HEAD)"
+  done < <(repos)
+  printf '}'
+}
