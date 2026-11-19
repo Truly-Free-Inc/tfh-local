@@ -399,9 +399,10 @@ services:
     restart: unless-stopped
     volumes:
       - ./docker/node-egress-preload.cjs:/opt/tfh-local/node-egress-preload.cjs:ro
-    # Memory (root cause, M5a): uncapped, next dev's `next-server` child grew to ~5 GB RSS under the 4-worker gate
-    # and the Docker VM's *global* OOM killer took it (and could pick other containers). The child is not PID 1, so
-    # Docker never reported OOMKilled; `next dev` exited 0 and restart: unless-stopped brought it back.
+    # Memory (M5a, measured): next dev's `next-server` child holds ~10.4k webpack modules per compiled route; its
+    # anon RSS reaches 4.1-4.5 GB after ~7 routes (beyond the V8 heap cap: native/external memory). Uncapped on the
+    # old ~8 GB VM it starved the VM; restarts were not flagged OOMKilled (the child, not PID 1, dies; restart:
+    # unless-stopped brings `next dev` back). Kernel OOM log was lost in the Docker Desktop crash.
     # Now: a cgroup limit (an OOM stays inside this container) paired with a V8 heap cap well below it (headroom for
     # SWC/webpack native memory), so V8 collects harder before the kernel steps in. Needs Docker Desktop >= 12 GB.
     mem_limit: ${MEMBERPORTAL_MEM_LIMIT:-5g}
