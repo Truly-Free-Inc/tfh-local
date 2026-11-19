@@ -60,6 +60,10 @@ safe_push() {
   git -C "$d" push -u origin "refs/heads/$b:refs/heads/$b"
 }
 
+# key_grep <KEY>: Playwright --grep (JS RegExp) matching the tag @KEY as a whole ticket key, so @TFHFUNNEL-12
+# does not also select @TFHFUNNEL-123. Left side is fixed by the '@'; right side must not continue with a digit.
+key_grep() { [[ "$1" =~ $KEY_RE ]] || return 1; printf '@%s(?![0-9])' "$1"; }
+
 is_dirty() { [ -n "$(git -C "$1" status --porcelain)" ]; }
 
 # Host part of a URL or bare host: strip scheme, path, port, userinfo; lowercase.

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # make verify KEY=TFHFUNNEL-1234   (or plain `make verify`: core gate only)
 # preflight -> stack health -> tfh-automation on the HOST against the local stack:
-#   1) the ticket's tests:  --grep @KEY   (must exist; Playwright exits non-zero if none match; skipped without KEY)
+#   1) the ticket's tests:  --grep '@KEY(?![0-9])'  (whole key: @X-12 never selects @X-123; must exist; Playwright exits non-zero if none match; skipped without KEY)
 #   2) the core gate:       --grep @gate --grep-invert @quarantine   (same as `npm run test:gate`)
 # -> scripts/check-test-orders.sh -> .state/runs/<KEY>-<ts>/summary.md + reports. Exit non-zero if red.
 # The suite's test-order guard (lib/test-order-guard.ts) is used as-is. Never edit or widen it.
@@ -42,7 +42,7 @@ run_suite() { # label grep [grep-invert]
 
 mkdir -p "$RUN/ticket" "$RUN/gate"
 set +e
-if [ -n "${KEY:-}" ]; then run_suite ticket "@$KEY"; T=$?; else T=0; fi
+if [ -n "${KEY:-}" ]; then run_suite ticket "$(key_grep "$KEY")"; T=$?; else T=0; fi
 run_suite gate   "@gate" "@quarantine"; G=$?
 "$ROOT/scripts/check-test-orders.sh" "$START" > "$RUN/test-orders.log" 2>&1; O=$?
 set -e
