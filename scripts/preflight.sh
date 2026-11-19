@@ -86,6 +86,16 @@ while IFS='=' read -r k v; do
   esac
 done < <(env)
 
+# 2b. Builder.io stays read-only: only PUBLIC API keys. Refuse any Builder private/write key (by name, in .env and the
+#     calling shell) and any value with the Builder private-key prefix 'bpk-' (whatever the variable is called).
+while IFS='=' read -r k v; do
+  [ -n "$v" ] || continue
+  case "$k" in
+    *BUILDER*PRIVATE*|*BUILDER*SECRET*|*BUILDER*WRITE*|*BUILDER*ADMIN*) bad "$k is set. Only public Builder.io keys are allowed (read-only)." ;;
+  esac
+  case "$v" in bpk-*|\"bpk-*|\'bpk-*) bad "$k holds a Builder.io private key (bpk-...). Only public keys are allowed." ;; esac
+done < <(env; printf '%s\n' "$CALLER_ENV")
+
 # 3. DB host must be the local container.
 if [ -n "${DB_HOST:-}" ] && [ "$DB_HOST" != "postgres" ]; then
   bad "DB_HOST='$DB_HOST'. Only the local container 'postgres' is allowed."
@@ -102,6 +112,8 @@ if command -v docker >/dev/null 2>&1; then
   if [ -n "$cfg" ]; then
     printf '%s' "$cfg" | grep -Eq '(SYTE_?LINE|SYTELINE|INFOR_|TFH_?CORE|TFHCORE|AVALARA)[A-Z_]*:' \
       && bad "docker compose config contains a forbidden variable (Syteline/Infor/tfhcore/Avalara)"
+    printf '%s' "$cfg" | grep -Eq '(BUILDER[A-Z_]*(PRIVATE|SECRET|WRITE|ADMIN)[A-Z_]*: *[^ ]|: *"?bpk-)' \
+      && bad "docker compose config carries a Builder.io private key (variable name or bpk- value)"
     if [ "$EXTERNALS" = "offline" ]; then
       # Compose resolves shell env over .env, so check what the containers would actually get.
       while IFS= read -r line; do
