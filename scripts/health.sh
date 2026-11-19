@@ -37,4 +37,10 @@ if [ -n "$(dc ps -q vector-search 2>/dev/null)" ]; then probe vector-search "htt
 # Egress must stay locked: the proxy must refuse a host that is not on the allow-list.
 code="$(dc exec -T tf-api bash -c 'exec 3<>/dev/tcp/proxy/8888 && printf "GET http://a.klaviyo.com/ HTTP/1.0\r\nHost: a.klaviyo.com\r\n\r\n" >&3 && head -1 <&3' 2>/dev/null | awk '{print $2}' || true)"
 case "$code" in 403) echo "ok: proxy denies non-allow-listed host (a.klaviyo.com -> $code)" ;; *) red "proxy did NOT deny a.klaviyo.com (got '${code:-no response}')"; fail=1 ;; esac
+# Node egress guard (docker/node-egress-preload.cjs) must be ACTIVE in every container that loads it, i.e. it found the
+# app's undici. A node process started with the container's NODE_OPTIONS reports the state the dev server got.
+for s in memberportal aff-landing-pages; do
+  gs="$(dc exec -T "$s" node -e 'process.stdout.write(String(globalThis.__TFH_EGRESS_GUARD||"NOT LOADED"))' 2>/dev/null | tail -1 || true)"
+  if [ "$gs" = ACTIVE ]; then echo "ok: egress guard ACTIVE in $s"; else red "egress guard not active in $s (got '${gs:-no response}')"; fail=1; fi
+done
 [ $fail -eq 0 ] && grn "health: OK" || { red "health: FAILED"; exit 1; }
