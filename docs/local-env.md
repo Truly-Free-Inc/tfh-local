@@ -137,5 +137,6 @@ Known local failures (not offline externals):
   missing locally (`e.error?.includes is not a function` on tf-api's structured 404). The local flag seed is a
   placeholder until Richard/Michael provide the approved snapshot (seed/sql/10_feature_flags.sql). Plus `/_next/image`
   500s for prod-CDN images (above).
-- storefront/cart-checkout-totals: drawer subtotal applies the 10% volume tier ($17.95), checkout shows list ($19.95).
-  Root cause not confirmed locally.
+- storefront/cart-checkout-totals: checkout is self-consistent (subtotal $19.95, savings $2.00 = the 10% volume tier,
+  total $17.95), but the cart drawer's Subtotal shows the pre-discount $19.95 and the test expects it to equal the
+  payable $17.95. Not confirmed whether stage's drawer shows the discounted figure (no remote calls from here).
