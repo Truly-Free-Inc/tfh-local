@@ -15,3 +15,5 @@ for i in $(seq 1 60); do
 done
 dc ps
 "$ROOT/scripts/health.sh"
+# Local auth users (portal test customer + local admin); idempotent, never touches feature flags.
+"$ROOT/seed/auth-users.sh"
