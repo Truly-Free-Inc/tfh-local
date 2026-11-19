@@ -58,7 +58,7 @@ What is offline, and why:
 - **Klaviyo, S3, mail: local fakes** (recorder, MinIO, Mailpit). tf-api's Mailgun mail is not sent.
 - **Builder.io: read-only.** Only `cdn.builder.io` is reachable (`proxy/readonly-allowlist.txt`, fixed by preflight),
   with public keys from `.env` (`LOCAL_BUILDER_PUBLIC_KEY_*`); Node apps refuse non-GET requests to it.
-- **Catalog data: placeholder.** A prod-like catalog seed needs a read-only DB credential (none on this machine).
+- **Catalog data: optional, never in git.** `make seed-catalog` loads a catalog export (definition tables only) kept in the gitignored `.state/catalog-export/`, after a customer/order data scan of every column and value (see `seed/catalog/README.md`).
 - Crons never run (`cron` profile refuses). Feature flags are seeded once, never toggled.
 
 ## Quick start

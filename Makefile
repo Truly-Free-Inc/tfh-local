@@ -3,7 +3,7 @@ SHELL := /bin/bash
 .DEFAULT_GOAL := help
 export KEY BRANCH CONFIRM LOCAL_SRC REFRESH VECTOR
 
-.PHONY: help bootstrap refresh ticket up down health logs verify status pr reset preflight check-secrets config test seed-auth prove-login prove-admin
+.PHONY: help bootstrap refresh ticket up down health logs verify status pr reset preflight check-secrets config test seed-auth prove-login prove-admin seed-catalog
 
 help: ## list targets
 	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  %-14s %s\n", $$1, $$2}'
@@ -34,6 +34,9 @@ health: ## core containers, one-shot jobs, tf-api /health, Mailpit, MinIO, proxy
 
 seed-auth: ## (re)seed local auth users: portal test customer (tf-api DB + Kratos) and local admin (Kratos + Keto)
 	@seed/auth-users.sh
+
+seed-catalog: ## load the gitignored catalog export (.state/catalog-export) into LOCAL tf-api Postgres (CATALOG_MODE=replace|upsert)
+	@scripts/seed-catalog.sh
 
 prove-login: ## headless portal login as the seeded test customer -> /dashboard; screenshot .state/m2-login.png
 	@set -a; . ./.env; set +a; node scripts/prove-portal-login.cjs
