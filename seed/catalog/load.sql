@@ -212,7 +212,10 @@ BEGIN
       FROM pg_temp.tfh_cols(r.tbl) c
      WHERE EXISTS (SELECT 1 FROM jsonb_array_elements(r.rows) x WHERE x ? c.col);
     has_id := EXISTS (SELECT 1 FROM pg_temp.tfh_cols(r.tbl) WHERE col = 'id');
-    EXECUTE format('INSERT INTO public.%I (%s) SELECT %s FROM jsonb_array_elements($1) e %s',
+    -- Insert in id order (prod's insertion order): the export's row order is arbitrary, and some tf-api reads
+    -- have no ORDER BY (e.g. volume_discount_tiers), so heap order would leak into API answers.
+    EXECUTE format('INSERT INTO public.%I (%s) SELECT %s FROM jsonb_array_elements($1) WITH ORDINALITY x(e, n) '
+                   'ORDER BY (CASE WHEN e->>''id'' ~ ''^[0-9]+$'' THEN (e->>''id'')::numeric END) NULLS LAST, n %s',
                    r.tbl, cols, exprs,
                    CASE WHEN mode = 'upsert' AND has_id THEN 'ON CONFLICT (id) DO UPDATE SET ' || upd
                         WHEN mode = 'upsert' THEN 'ON CONFLICT DO NOTHING' ELSE '' END)

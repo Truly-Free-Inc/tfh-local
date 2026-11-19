@@ -34,9 +34,10 @@ case "$MODE" in
     if [ -f .next/standalone/server.js ]; then
       # `output: "standalone"` apps (funnels): `next start` is unsupported; run the standalone server like the
       # deployed image does, with its static assets and public/ copied next to it.
-      mkdir -p .next/standalone/.next
-      [ -d .next/standalone/.next/static ] || cp -R .next/static .next/standalone/.next/static
-      [ -d public ] && [ ! -d .next/standalone/public ] && cp -R public .next/standalone/public
+      # Merge (not copy-if-missing): the build may pre-create standalone/.next/static with only some assets.
+      mkdir -p .next/standalone/.next/static
+      cp -R .next/static/. .next/standalone/.next/static/
+      if [ -d public ]; then mkdir -p .next/standalone/public && cp -R public/. .next/standalone/public/; fi
       cd .next/standalone
       HOSTNAME=0.0.0.0 PORT=3000 exec node server.js
     fi

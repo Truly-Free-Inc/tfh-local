@@ -435,6 +435,8 @@ services:
       MEMBER_PORTAL_BASE_URL: http://localhost:${MEMBERPORTAL_HOST_PORT:-13001}
       NEXT_PUBLIC_MEMBER_PORTAL_LOGIN_URL: http://localhost:${MEMBERPORTAL_HOST_PORT:-13001}/login
       NEXT_PUBLIC_COOKIE_DOMAIN: ""            # host-only cookies on localhost (default is .trulyfreehome.com)
+      NEXT_PUBLIC_CART_ID_COOKIE_NAME: tf_cart_id_local          # same name as the funnels app (shared cart)
+      NEXT_PUBLIC_SELECTED_SUBSCRIPTION_COOKIE_NAME: local_tfh_selected_subscription_uuid
       # Builder.io PUBLIC keys (read-only content API via proxy/readonly-allowlist.txt), set in .env (gitignored).
       # Unset -> placeholder: Builder SDK throws without a key; with it, fetches fail -> 404 component.
       NEXT_PUBLIC_BUILDER_API_KEY: ${LOCAL_BUILDER_PUBLIC_KEY_PORTAL:-tfh-local-offline}
@@ -461,7 +463,7 @@ services:
       dockerfile: ../../docker/next-dev.Dockerfile
     image: tfh-local/admin-panel:local
     restart: unless-stopped
-    mem_limit: ${ADMIN_MEM_LIMIT:-3g}   # dev: 1.5 GB is OOM-killed compiling /dashboard; prod: room for next build
+    mem_limit: ${ADMIN_MEM_LIMIT:-5g}   # dev: 1.5 GB is OOM-killed compiling /dashboard; prod: next build needs a >2 GB heap (OOM at 2048)
     command: ["sh", "/opt/tfh-local/next-app-start.sh"]
     volumes:
       - ./docker/next-app-start.sh:/opt/tfh-local/next-app-start.sh:ro
@@ -471,7 +473,7 @@ services:
       <<: *proxy-env
       LOCAL_APP_MODE: ${LOCAL_APP_MODE:-prod}
       NODE_OPTIONS: --max-old-space-size=1536
-      NEXT_BUILD_NODE_OPTIONS: --max-old-space-size=${ADMIN_BUILD_HEAP_MB:-2048}
+      NEXT_BUILD_NODE_OPTIONS: --max-old-space-size=${ADMIN_BUILD_HEAP_MB:-4096}
       NEXT_PUBLIC_ENVIRONMENT: local
       NEXT_PUBLIC_FEATURE_FLAG_ENVIRONMENT: ${APP_ENV:-local}
       TF_API_DOMAIN: http://tf-api:3000
@@ -521,6 +523,20 @@ services:
       TF_INTERNAL_APIGATEWAY_DOMAIN: http://tf-apigateway:8080
       KRATOS_PUBLIC_URL: http://kratos:4433
       NEXT_PUBLIC_BASE_URL: http://localhost:${FUNNELS_HOST_PORT:-13003}
+      # Cookie/storage names: same scheme as the deployed envs (tf_cart_id_dev|stage|prod) with a `local` suffix.
+      # Unset, the cart id cookie has no name, so add-to-cart silently does nothing (handler needs a cart id).
+      NEXT_PUBLIC_CART_ID_COOKIE_NAME: tf_cart_id_local
+      NEXT_PUBLIC_CART_SESSION_ID_COOKIE_NAME: tf_cart_session_id_local
+      NEXT_PUBLIC_SESSION_ID_COOKIE_NAME: tf_session_id_local
+      NEXT_PUBLIC_SELECTED_SUBSCRIPTION_COOKIE_NAME: local_tfh_selected_subscription_uuid
+      NEXT_PUBLIC_PLP_BOX_PROMPT_DISMISSED_KEY: local_tfh_plp_box_prompt_dismissed
+      # Non-secret UI/config values as in the repo's .env.develop/.env.stage.
+      NEXT_PUBLIC_STOREFRONT_CAMPAIGN_ID: "162"
+      NEXT_PUBLIC_CART_BUILDER_ENABLED: "true"
+      NEXT_PUBLIC_PDP_BUILDER_ENABLED: "true"
+      NEXT_PUBLIC_PLP_BUILDER_ENABLED: "true"
+      NEXT_PUBLIC_SHOW_TRAVEL_SIZES_CATEGORY: "true"
+      NEXT_PUBLIC_REDIRECT_CACHE_TTL_MINUTES: "0"
       NEXT_PUBLIC_HOST_NAME: localhost
       NEXT_PUBLIC_MEMBER_PORTAL_LOGIN_URL: http://localhost:${MEMBERPORTAL_HOST_PORT:-13001}/login
       CORS_ALLOWED_ORIGINS: http://localhost:${FUNNELS_HOST_PORT:-13003},http://localhost:${ADMIN_PANEL_HOST_PORT:-13002}
