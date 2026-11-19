@@ -1,0 +1,106 @@
+# tfh-local Kratos config. Derived from apps/tf-apigateway/config/kratos/kratos.yml with LOCAL-ONLY changes:
+#   - localhost URLs only (no *.trulyfreehome.com origins / return URLs, no cookie domain)
+#   - courier SMTP -> Mailpit (env COURIER_SMTP_CONNECTION_URI, set in docker-compose.yml)
+#   - Google OIDC disabled (no client id/secret here; out of scope locally)
+# DSN, secrets.cookie / secrets.cipher come from env (DSN, SECRETS_COOKIE, SECRETS_CIPHER); never put values here.
+version: v1.3.1
+
+serve:
+  public:
+    base_url: http://localhost:14433/
+    cors:
+      enabled: true
+      allowed_origins:
+        - http://localhost:13001   # memberportal
+        - http://localhost:13002   # admin panel
+        - http://localhost:13003   # funnels
+        - http://localhost:13004   # tf-apigateway
+        - http://localhost:14433
+      allowed_methods: [POST, GET, PUT, PATCH, DELETE]
+      allowed_headers: [Authorization, Content-Type, X-Session-Token]
+      exposed_headers: [Content-Type, X-Session-Token]
+      allow_credentials: true
+  admin:
+    base_url: http://kratos:4434/
+
+session:
+  cookie:
+    name: ory_kratos_session
+    path: /
+    same_site: Lax
+    persistent: true
+
+selfservice:
+  default_browser_return_url: http://localhost:13002/
+  allowed_return_urls:
+    - http://localhost:13001
+    - http://localhost:13002
+    - http://localhost:13003
+    - http://localhost:13004
+    - http://localhost:14433
+
+  methods:
+    password:
+      enabled: true
+      config:
+        haveibeenpwned_enabled: false   # would call api.pwnedpasswords.com; no egress locally
+        min_password_length: 6
+        identifier_similarity_check_enabled: false
+    totp:
+      enabled: true
+      config:
+        issuer: TFH API Gateway (local)
+    lookup_secret:
+      enabled: true
+    link:
+      enabled: true
+    code:
+      enabled: true
+    oidc:
+      enabled: false
+
+  flows:
+    error:
+      ui_url: http://localhost:13002/error
+    settings:
+      ui_url: http://localhost:13002/settings
+      privileged_session_max_age: 15m
+      required_aal: aal1
+    recovery:
+      enabled: true
+      ui_url: http://localhost:13002/recovery
+      use: code
+      lifespan: 10m
+      after:
+        default_browser_return_url: http://localhost:13002/settings
+        hooks:
+          - hook: revoke_active_sessions
+    verification:
+      enabled: false
+      ui_url: http://localhost:13002/verification
+      use: code
+    logout:
+      after:
+        default_browser_return_url: http://localhost:13002/
+    login:
+      ui_url: http://localhost:13002/login
+      lifespan: 10m
+    registration:
+      lifespan: 10m
+      ui_url: http://localhost:13002/register
+
+log:
+  level: info
+  format: text
+
+courier:
+  smtp:
+    from_address: no-reply@tfh-local.invalid
+    from_name: TFH API Gateway (local)
+
+identity:
+  default_schema_id: default
+  schemas:
+    - id: default
+      # Bind-mounted read-only from apps/tf-apigateway/config/kratos (unchanged).
+      url: file:///etc/config/kratos/identity.schema.json

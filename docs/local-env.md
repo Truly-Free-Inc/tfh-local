@@ -19,7 +19,7 @@ export const TARGET_ENVS: TargetEnv[] = ['local', 'dev', 'stage', 'prod'];
 // ENVS: local site URLs = tfh-local host ports (127.0.0.1 only). null = not wired yet (tests skip).
 local: {
   funnel: process.env.FUNNEL_BASE_URL || null,                       // aff-landing-pages: stub (13003)
-  'member-portal': process.env.MEMBER_PORTAL_BASE_URL || null,       // memberportal: stub (13001)
+  'member-portal': process.env.MEMBER_PORTAL_BASE_URL || null,       // memberportal: live (13001)
   storefront: null,                                                  // builderio_storefront is OUT
   admin: process.env.ADMIN_BASE_URL || null,                         // admin panel: stub (13002)
 },
@@ -31,7 +31,7 @@ local: {
   admin: process.env.ADMIN_BASE_URL || null,
   my4: null,
   tfApi: process.env.TF_API_BASE_URL || 'http://127.0.0.1:13000',   // tfh-local TF_API_HOST_PORT
-  apiGateway: null,                                                  // stub (14000)
+  apiGateway: process.env.API_GATEWAY_BASE_URL || null,             // tf-apigateway: live (13004)
   legacyFunnels: null,
   legacyLaravel: null,
 },
@@ -61,7 +61,8 @@ Gate tag: `@gate` (`npm run test:gate` = `--grep @gate --grep-invert @quarantine
 | Mailpit UI / SMTP | 18025 / 11025 |
 | MinIO API / console | 19000 / 19001 |
 | Klaviyo recorder (`GET /__calls`) | 18090 |
-| memberportal / admin / funnels / apigateway / vector (stubs) | 13001 / 13002 / 13003 / 14000 / 18077 |
+| memberportal (live) / admin (stub) / funnels (stub) / apigateway (live) / vector (stub) | 13001 / 13002 / 13003 / 13004 / 18077 |
+| Kratos public / admin (live, loopback) | 14433 / 14434 |
 
 ## Known gaps (TODO)
 - tf-api Klaviyo base URL is a hard-coded constant (`constants.KlaviyoAPIBaseURL`); needs an env-override PR before
@@ -71,3 +72,16 @@ Gate tag: `@gate` (`npm run test:gate` = `--grep @gate --grep-invert @quarantine
 - tfhcore: an audit found remaining tfhcore calls that **will fail locally until moved to tf-api**:
   memberportal (per-page session create, addresses, search, logger, email change, old cancel flow, token refresh)
   and tf-api (cart-session fallback, Redis session dependency, two MySQL jobs). tfhcore is never configured here.
+
+## Member portal locally (M2)
+- Log in at `http://localhost:13001/login` with `TEST_CUSTOMER_PORTAL_EMAIL` / `TEST_CUSTOMER_PORTAL_PASSWORD` from `.env`
+  (suite: map these to the portal test-customer variables for the `local` env).
+- Login path: portal `/portal/api/v1/auth/login` -> tf-api (bcrypt in `customer_auth`) -> session in the LOCAL Redis
+  (`SESSION_WRITE_NEXTGEN_REDIS_ENABLED=true`; `REDIS_HOST_TFH_CORE` is never set).
+- Login-time Sticky calls fail in milliseconds (offline). `login_order_sync_enabled` has no flag row locally, so sync is skipped.
+- `next dev` hydrates late: fill the login form after `load` (see `scripts/prove-portal-login.cjs`). First hit of each
+  route compiles it (~20-30 s).
+- Offline failures (expected): Builder.io pages other than `/login` and `/dashboard` (overlays), the dashboard sidebar
+  (Builder symbol), Google login, Google Fonts (fallback font), GTM/Yotpo/referral scripts, portal CloudWatch
+  logger (defaults to a remote develop host; DNS fails, nothing leaves), OTEL trace proxy (500, harmless), and every
+  tfhcore-backed flow (addresses, header search, logger, email change, old cancel flow, token refresh).

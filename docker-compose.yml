@@ -21,8 +21,8 @@ x-proxy-env: &proxy-env
   HTTPS_PROXY: http://proxy:8888
   http_proxy: http://proxy:8888
   https_proxy: http://proxy:8888
-  NO_PROXY: localhost,127.0.0.1,postgres,redis,minio,mailpit,klaviyo-recorder,tf-api
-  no_proxy: localhost,127.0.0.1,postgres,redis,minio,mailpit,klaviyo-recorder,tf-api
+  NO_PROXY: localhost,127.0.0.1,postgres,redis,minio,mailpit,klaviyo-recorder,tf-api,tf-apigateway,kratos,keto,memberportal
+  no_proxy: localhost,127.0.0.1,postgres,redis,minio,mailpit,klaviyo-recorder,tf-api,tf-apigateway,kratos,keto,memberportal
 
 x-stub: &stub
   image: alpine:3.20
@@ -42,6 +42,7 @@ volumes:
   redis-data: {}
   minio-data: {}
   klaviyo-data: {}
+  gateway-postgres-data: {}
 
 services:
   # ---------------------------------------------------------------- core (wired)
@@ -129,6 +130,10 @@ services:
       REDIS_PORT: "6379"
       REDIS_DB: "0"
       REDIS_TLS_ENABLED: "false"   # tf-api defaults to TLS (ElastiCache); local redis is plain
+      # Portal sessions: write to the local (nextgen) Redis above. REDIS_HOST_TFH_CORE is never set (tfhcore OUT).
+      SESSION_WRITE_NEXTGEN_REDIS_ENABLED: "true"
+      PORTAL_COOKIE_DOMAIN: ""
+      TF_INTERNAL_APIGATEWAY_DOMAIN: http://tf-apigateway:8080
       # OTEL default is the k8s collector; send to loopback instead (connection refused, nothing leaves).
       OTEL_EXPORTER_OTLP_ENDPOINT: 127.0.0.1:4318
       # Real NON-PROD Sticky / TF, test orders only. Preflight enforces the host allow-list.
@@ -208,6 +213,10 @@ services:
       - "127.0.0.1:${MINIO_API_HOST_PORT:-19000}:19000"
       - "127.0.0.1:${MINIO_CONSOLE_HOST_PORT:-19001}:19001"
       - "127.0.0.1:${KLAVIYO_RECORDER_HOST_PORT:-18090}:18090"
+      - "127.0.0.1:${MEMBERPORTAL_HOST_PORT:-13001}:13001"
+      - "127.0.0.1:${APIGATEWAY_HOST_PORT:-13004}:13004"
+      - "127.0.0.1:${KRATOS_PUBLIC_HOST_PORT:-14433}:14433"
+      - "127.0.0.1:${KRATOS_ADMIN_HOST_PORT:-14434}:14434"
     networks: [internal, edge]
 
   mailpit:
@@ -254,18 +263,146 @@ services:
     networks: [internal]
 
   # ---------------------------------------------------------------- stubs (TODO, profile `stub`)
-  # TODO(memberportal): build from apps/memberportal (.cicd/docker/Dockerfile or Dockerfile.dev), port 3000 ->
-  #   ${MEMBERPORTAL_HOST_PORT:-13001}; TFH_API_DOMAIN=http://tf-api:3000; KLAVIYO_BASE_URL=http://klaviyo-recorder:8090.
-  #   Remaining tfhcore calls (address validate, search, logger, ...) will fail locally until moved to tf-api.
-  memberportal: *stub
-  # TODO(tf-apigateway): Dockerfile.api from apps/tf-apigateway; KRATOS_*/KETO_* URLs; DSN to gateway-postgres.
-  tf-apigateway: *stub
-  # TODO(kratos): oryd/kratos:v1.3.1 + migrate job; config from apps/tf-apigateway; SMTP -> mailpit:1025.
-  kratos: *stub
-  # TODO(keto): oryd/keto:v0.12.0-alpha.0 + migrate job.
-  keto: *stub
-  # TODO(gateway-postgres): postgres:15 for Kratos/Keto/gateway (separate from tf-api DB).
-  gateway-postgres: *stub
+  # ---------------------------------------------------------------- auth gateway (M2)
+  # Mirrors apps/tf-apigateway/docker-compose.yml (Postgres 15, Kratos v1.3.1, Keto v0.12.0-alpha.0, api).
+  # Differences: own volume/creds from .env, Kratos config = auth/kratos/kratos.yml (localhost URLs, no Google,
+  # courier -> Mailpit), host ports only via ingress (127.0.0.1).
+  gateway-postgres:
+    image: postgres:15-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${GATEWAY_DB_USER:-tfh_gateway_local}
+      POSTGRES_PASSWORD: ${GATEWAY_DB_PASSWORD:-tfh_gateway_local_pw}
+      POSTGRES_DB: ${GATEWAY_DB_NAME:-tfh_gateway_local}
+    volumes: [gateway-postgres-data:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    networks: [internal]
+
+  kratos-migrate:
+    image: oryd/kratos:v1.3.1
+    restart: "no"
+    environment: &kratos-env
+      DSN: postgres://gateway-postgres:5432/${GATEWAY_DB_NAME:-tfh_gateway_local}?sslmode=disable&max_conns=20&max_idle_conns=4&user=${GATEWAY_DB_USER:-tfh_gateway_local}&password=${GATEWAY_DB_PASSWORD:-tfh_gateway_local_pw}
+      SECRETS_COOKIE: ${KRATOS_SECRETS_COOKIE:-}
+      SECRETS_CIPHER: ${KRATOS_SECRETS_CIPHER:-}
+      COURIER_SMTP_CONNECTION_URI: smtp://mailpit:1025/?disable_starttls=true
+    volumes: &kratos-volumes
+      - ./auth/kratos/kratos.yml:/etc/config/kratos/kratos.yml:ro
+      - ./apps/tf-apigateway/config/kratos/identity.schema.json:/etc/config/kratos/identity.schema.json:ro
+    command: ["-c", "/etc/config/kratos/kratos.yml", "migrate", "sql", "-e", "--yes"]
+    depends_on:
+      gateway-postgres: { condition: service_healthy }
+    networks: [internal]
+
+  kratos:
+    image: oryd/kratos:v1.3.1
+    restart: unless-stopped
+    environment: *kratos-env
+    volumes: *kratos-volumes
+    command: ["serve", "-c", "/etc/config/kratos/kratos.yml", "--dev", "--watch-courier"]
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:4434/admin/health/ready"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+    depends_on:
+      kratos-migrate: { condition: service_completed_successfully }
+      mailpit: { condition: service_started }
+    networks: [internal]
+
+  keto-migrate:
+    image: oryd/keto:v0.12.0-alpha.0
+    restart: "no"
+    environment: &keto-env
+      DSN: postgres://gateway-postgres:5432/${GATEWAY_DB_NAME:-tfh_gateway_local}?sslmode=disable&max_conns=20&max_idle_conns=4&user=${GATEWAY_DB_USER:-tfh_gateway_local}&password=${GATEWAY_DB_PASSWORD:-tfh_gateway_local_pw}
+      LOG_LEVEL: info
+    volumes: &keto-volumes
+      - ./apps/tf-apigateway/config/keto/keto.yml:/etc/config/keto/keto.yml:ro   # DSN overridden by env
+    command: ["migrate", "up", "-c", "/etc/config/keto/keto.yml", "-y"]
+    depends_on:
+      gateway-postgres: { condition: service_healthy }
+    networks: [internal]
+
+  keto:
+    image: oryd/keto:v0.12.0-alpha.0
+    restart: unless-stopped
+    environment: *keto-env
+    volumes: *keto-volumes
+    command: ["serve", "-c", "/etc/config/keto/keto.yml"]
+    depends_on:
+      keto-migrate: { condition: service_completed_successfully }
+    networks: [internal]
+
+  tf-apigateway:
+    build:
+      context: ./apps/tf-apigateway
+      dockerfile: Dockerfile.api
+    image: tfh-local/tf-apigateway:local
+    restart: unless-stopped
+    environment:
+      API_HOST: 0.0.0.0
+      API_PORT: "8080"
+      GIN_MODE: release
+      LOG_LEVEL: info
+      KRATOS_PUBLIC_URL: http://kratos:4433
+      KRATOS_ADMIN_URL: http://kratos:4434
+      KETO_READ_URL: http://keto:4466
+      KETO_WRITE_URL: http://keto:4467
+      # DB_* intentionally unset: the gateway binary never opens its DB config (only Kratos/Keto use the DB, via DSN),
+      # and preflight only allows DB_HOST=postgres.
+      API_DOMAIN: http://localhost:${APIGATEWAY_HOST_PORT:-13004}
+      KRATOS_DOMAIN: localhost
+      OTEL_EXPORTER_OTLP_ENDPOINT: 127.0.0.1:4318
+      CLOUDWATCH_ENABLED: "false"
+    depends_on:
+      kratos: { condition: service_healthy }
+      keto: { condition: service_started }
+    networks: [internal]
+
+  # ---------------------------------------------------------------- memberportal (M2)
+  # `next dev` image (docker/memberportal.Dockerfile). Points ONLY at local tf-api. tfhcore URLs are never set.
+  # Builder.io is unreachable offline: a local /login overlay renders the real LoginForm; Builder pages 404.
+  memberportal:
+    build:
+      context: ./apps/memberportal
+      dockerfile: ../../docker/memberportal.Dockerfile
+      additional_contexts:
+        overlay: ./docker/memberportal-overlay
+    image: tfh-local/memberportal:local
+    restart: unless-stopped
+    environment:
+      <<: *proxy-env
+      NODE_ENV: development
+      ENVIRONMENT: local
+      NEXT_PUBLIC_ENVIRONMENT: local
+      TF_API_DOMAIN: http://tf-api:3000
+      NEXT_PUBLIC_TF_API_DOMAIN: http://localhost:${TF_API_HOST_PORT:-13000}
+      NEXT_PUBLIC_API_BASE_URL: http://localhost:${TF_API_HOST_PORT:-13000}
+      NEXT_PUBLIC_TF_CHECKOUT_DOMAIN: http://localhost:${TF_API_HOST_PORT:-13000}
+      NEXT_PUBLIC_NEXT_GEN_DOMAIN: http://localhost:${MEMBERPORTAL_HOST_PORT:-13001}
+      NEXT_PUBLIC_MEMBER_PORTAL_BASE_URL: http://localhost:${MEMBERPORTAL_HOST_PORT:-13001}
+      MEMBER_PORTAL_BASE_URL: http://localhost:${MEMBERPORTAL_HOST_PORT:-13001}
+      NEXT_PUBLIC_MEMBER_PORTAL_LOGIN_URL: http://localhost:${MEMBERPORTAL_HOST_PORT:-13001}/login
+      NEXT_PUBLIC_COOKIE_DOMAIN: ""            # host-only cookies on localhost (default is .trulyfreehome.com)
+      # Placeholder (not a key): Builder SDK throws without one; with it, fetches fail fast (no egress) -> 404 component.
+      NEXT_PUBLIC_BUILDER_API_KEY: tfh-local-offline
+      NEXT_PUBLIC_FUNNEL_BUILDER_API_KEY: tfh-local-offline
+      KLAVIYO_BASE_URL: http://klaviyo-recorder:8090
+      NEXT_PUBLIC_KLAVIYO_BASE_URL: http://localhost:${KLAVIYO_RECORDER_HOST_PORT:-18090}
+      NEXT_PUBLIC_SENTRY_ENABLED: "false"
+      NEXT_PUBLIC_GA4_ENABLED: "false"
+      NEXT_PUBLIC_SURVEYS_ENABLED: "false"
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://127.0.0.1:4318
+      # NEVER set: NEXT_PUBLIC_TRULY_FREE_CORE_API_URL, NEXT_PUBLIC_TFH_SESSION_API_URL, TFH_SESSION_API_URL_INTERNAL,
+      # TFH_PYTHON_API_URL, TRULY_FREE_CORE_API_KEY (tfhcore OUT); NEXT_PUBLIC_TFH_LARAVEL_API_DOMAIN (legacy OUT).
+    depends_on:
+      tf-api: { condition: service_started }
+    networks: [internal]
+
   # TODO(admin-panel): new docker/admin-panel.Dockerfile (repo has none); TF_ADMIN_API_URL=http://tf-api:3000.
   admin-panel: *stub
   # TODO(aff-landing-pages): apps/nextjs-aff-landing-pages/Dockerfile exists; wire TF_API_DOMAIN, Kratos URLs.
