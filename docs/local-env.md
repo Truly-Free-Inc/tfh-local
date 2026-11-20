@@ -137,11 +137,27 @@ test orders only). Spreedly, Avalara, Cloudflare, image CDN, Braintree and Googl
 - api/tax: Avalara (tax). api/address-validation: Avalara/Google/USPS.
 - storefront/image-cdn: product images go through funnels' `/_next/image`, which fetches the prod image CDN server-side
   (container egress blocked by design).
-- funnel/checkout-totals (TF-processor check) and cross-browser/ios-forms (card/CVV fields): TF / Spreedly payment iframes.
+- funnel/checkout-totals (TF-processor check), funnel/offer-order (the gate offer is a TF-processor offer) and
+  cross-browser/ios-forms (card/CVV fields): the TF payment form is Spreedly iframes, which need the Spreedly TF key;
+  Spreedly stays offline, so TF offers fall back to the native card form and cannot be ordered.
 - platform/cf-geo: Cloudflare.
 In local runs the suite also blocks the live Klaviyo, Amazon ads, Northbeam and the prod track pixel in the browser:
 they hung the page `load` event and must not receive events from a local run.
 Other skips are by design of the suite (orders need the test-customer secrets; Sticky orders need `EXTERNALS=real`).
+
+Orders with `EXTERNALS=real` (M8, 2026-11-20): `make verify` also exports `TEST_CUSTOMER_*` (first/last name must be
+`test`/`test`; email = the local portal test customer's `*.test` address; fictional address/phone) and the test cards
+`TFH_STICKY_CARD_*` / `TF_SPREEDLY_CARD_*` from `.env` (names in `.env.example`; values from the team's test-card set,
+never committed). The storefront checkout uses native card fields -> the Sticky test card -> a real Sticky test order
+(gateway test path, flagged test). Every order still goes through the suite's `lib/test-order-guard.ts` and
+`scripts/check-test-orders.sh`. tf-api runs with `RECAPTCHA_TRANSACTION_DEFENSE_ENABLED=false` locally: the
+Transaction Defense check scores orders with Google reCAPTCHA (unreachable here) and otherwise hard-blocks every order
+create with 403 `RECAPTCHA_BLOCKED` before Sticky/TF is called.
+Still skipped by the specs themselves (not by tfh-local): coupons ("coupon checks run on stage") and admin writes
+("admin writes are stage only", rebill offer create). Quarantined: member-portal/subscription-changes (Q8,
+TFHFUNNEL-8088: quantity 400, skip-once 422, shipping-address 500 on local tf-api; the rest of the flow passes).
+Known data mismatch: the local catalog is a prod export, so TF dev's `/v1/tax/estimate` answers "Product not found for
+tfProductId" for TF-mapped products (the checkout quote falls back; no test depends on it yet).
 
 Admin (Michael, 2026-11-20): the suite's READ-ONLY admin tests also run locally (tfh-automation PR #17), logged in as
 the seeded staff admin `LOCAL_ADMIN_EMAIL` = `local-admin@trulyfreehome.com` (`make verify` exports it as

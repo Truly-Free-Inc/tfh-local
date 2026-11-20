@@ -192,6 +192,10 @@ services:
       FACEBOOK_ACCESS_TOKEN: ""
       FACEBOOK_PIXEL_ID: ""
       CUSTOMERLABS_WEBHOOK_URL: ""
+      # reCAPTCHA Transaction Defense scores every order with Google reCAPTCHA Enterprise (defaults ON in tf-api). Google
+      # is unreachable from tfh-local, so with it on every order create is hard-blocked (403 RECAPTCHA_BLOCKED) before
+      # Sticky/TF. Off locally; no reCAPTCHA keys are ever set. Test orders only either way.
+      RECAPTCHA_TRANSACTION_DEFENSE_ENABLED: "false"
       # NEVER set: SYTE_LINE_* (Syteline/Infor), TFH_CORE_* / TFHCORE_* (tfhcore OUT), AVALARA_* (OUT).
     depends_on:
       seed: { condition: service_completed_successfully }
