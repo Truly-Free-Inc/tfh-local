@@ -545,6 +545,9 @@ services:
       NEXT_PUBLIC_MEMBER_PORTAL_LOGIN_URL: http://localhost:${MEMBERPORTAL_HOST_PORT:-13001}/login
       # Legal links (cookie banner, checkout footer, subscription terms). Unset, the cookie banner's Privacy Policy link
       # rendered href="undefined" on every page (tfh-automation storefront/placeholders). Same paths as the deployed envs.
+      # Deployed envs set this in the repo's .env.common (not read locally). Off, the portal BFF routes 404 "Feature
+      # disabled" and the storefront header never shows a logged-in member (tfh-automation member-session, storefront-security).
+      NEXT_PUBLIC_ENABLE_ADD_TO_BOX_FLOW: "true"
       NEXT_PUBLIC_PRIVACY_POLICY: http://localhost:${STOREFRONT_HOST_PORT:-13005}/pages/privacy-policy
       NEXT_PUBLIC_TERMS_AND_CONDITIONS_URL: http://localhost:${STOREFRONT_HOST_PORT:-13005}/pages/terms-of-service
       CORS_ALLOWED_ORIGINS: http://localhost:${FUNNELS_HOST_PORT:-13003},http://localhost:${ADMIN_PANEL_HOST_PORT:-13002}
