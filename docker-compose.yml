@@ -543,6 +543,10 @@ services:
       NEXT_PUBLIC_PRIMARY_INDEXABLE_DOMAIN: primary-domain.invalid
       NEXT_PUBLIC_HOST_NAME: localhost
       NEXT_PUBLIC_MEMBER_PORTAL_LOGIN_URL: http://localhost:${MEMBERPORTAL_HOST_PORT:-13001}/login
+      # Legal links (cookie banner, checkout footer, subscription terms). Unset, the cookie banner's Privacy Policy link
+      # rendered href="undefined" on every page (tfh-automation storefront/placeholders). Same paths as the deployed envs.
+      NEXT_PUBLIC_PRIVACY_POLICY: http://localhost:${STOREFRONT_HOST_PORT:-13005}/pages/privacy-policy
+      NEXT_PUBLIC_TERMS_AND_CONDITIONS_URL: http://localhost:${STOREFRONT_HOST_PORT:-13005}/pages/terms-of-service
       CORS_ALLOWED_ORIGINS: http://localhost:${FUNNELS_HOST_PORT:-13003},http://localhost:${ADMIN_PANEL_HOST_PORT:-13002}
       # Builder.io PUBLIC key (read-only content API via proxy/readonly-allowlist.txt), set in .env (gitignored).
       # Unset -> placeholder: Builder-backed pages (/, /offers/*, /info/*, /pages/*) 404 locally.
