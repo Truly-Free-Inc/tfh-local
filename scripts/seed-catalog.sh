@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # make seed-catalog [CATALOG_MODE=replace|upsert] [CATALOG_DIR=.state/catalog-export]
 # Loads an allow-listed CATALOG export (definition tables only: products, offers, placements, coupons, flows,
-# sitemap entries...; never customers/orders/subscriptions/feature_flags) into the LOCAL tf-api Postgres container.
+# sitemap entries...; plus the approved feature_flags snapshot; never customers/orders/subscriptions) into the LOCAL tf-api Postgres container.
 # The data (CATALOG_DIR/data/<table>.json) is NOT in git: it lives under the gitignored .state/ and is produced
 # out-of-band (see seed/catalog/README.md). This script only ever talks to the local compose postgres container.
 . "$(dirname "$0")/lib.sh"
@@ -31,4 +31,4 @@ rc=$?
 set -e
 docker exec "$CID" rm -rf "$TMP"
 [ $rc -eq 0 ] || die "catalog load failed (rc=$rc); the whole load was rolled back"
-grn "catalog loaded into local $DB (mode=$MODE). feature_flags untouched."
+grn "catalog loaded into local $DB (mode=$MODE). feature_flags = approved snapshot."

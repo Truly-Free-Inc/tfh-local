@@ -133,10 +133,8 @@ they hung the page `load` event and must not receive events from a local run.
 Other skips are by design of the suite (admin = stage only, orders need the test-customer secrets + Sticky).
 
 Known local failures (not offline externals):
-- storefront/page-health `/` and storefront/dropoff-upsell: the funnels feature-flag proxy answers 500 for every flag
-  missing locally (`e.error?.includes is not a function` on tf-api's structured 404). The local flag seed is a
-  placeholder until Richard/Michael provide the approved snapshot (seed/sql/10_feature_flags.sql). Plus `/_next/image`
-  500s for prod-CDN images (above).
+- Feature flags: `make seed-catalog` loads the approved prod snapshot. The funnels feature-flag proxy still answers 500
+  (not 404) for a flag that does not exist (`e.error?.includes is not a function` on tf-api's structured 404).
 - storefront/cart-checkout-totals: checkout is self-consistent (subtotal $19.95, savings $2.00 = the 10% volume tier,
   total $17.95), but the cart drawer's Subtotal shows the pre-discount $19.95 and the test expects it to equal the
   payable $17.95. Not confirmed whether stage's drawer shows the discounted figure (no remote calls from here).

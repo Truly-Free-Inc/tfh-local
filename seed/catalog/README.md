@@ -18,8 +18,12 @@ catalog pages have realistic products, offers, Builder placements, coupons, upse
 - **Definition tables only at export time.** The export itself is limited to catalog definition tables (products,
   offers, offer_* joins, images, tags, categories, coupons and promo-code *definitions*, campaigns, upsell flows,
   cancellation reasons, sitemap_entries...) and staff audit columns (`created_by`...) are stripped; the scan above is
-  the enforcement, so a mistake in the export list still cannot load customer or order data. `feature_flags` is never
-  exported.
+  the enforcement, so a mistake in the export list still cannot load customer or order data. `feature_flags` is the one
+  non-catalog table: a prod snapshot (103 rows, exported read-only via Cerebro, scanned, Michael approved 2026-11-19
+  4:59 PM ET; one staff-email value redacted, see `.state/catalog-export/FEATURE_FLAGS.md`). It is always fully
+  replaced (also with `CATALOG_MODE=upsert`), and flag values that are prod URLs are rewritten to the local funnels app.
+  tf-api's environment-scoped lookups use `APP_ENV=local`, which no row matches (the DB trigger rejects `local`), so
+  backend-only flags read as disabled locally; the name-only lookup the apps use (`/feature-flags/name/...`) sees prod values.
 - **Local only.** The script runs `psql` inside the compose `postgres` container; `load.sql` also refuses a
   non-local/non-private server address.
 - `CATALOG_MODE=replace` (default): one transaction, delete the allow-listed tables in reverse FK order, insert in FK
