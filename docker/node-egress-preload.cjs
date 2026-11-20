@@ -50,3 +50,60 @@ class ReadOnlyGuardAgent extends undici.EnvHttpProxyAgent {
 }
 undici.setGlobalDispatcher(new ReadOnlyGuardAgent());
 status('ACTIVE');
+
+// Next.js middleware runs in the edge-runtime sandbox (a vm context with its own bundled undici fetch). That fetch
+// cannot see the global dispatcher set above, so middleware fetches (e.g. the storefront's Builder url-redirects
+// rules) bypassed both the proxy and the read-only guard and simply failed offline. Hand the sandbox the guarded
+// Node fetch instead: same proxy allowlist, same GET-only rule. Requests whose body or signal cannot cross the
+// realm safely keep the sandbox's own fetch (which has no route out of the internal network: fails closed).
+const Module = require('module');
+const guardedFetch = globalThis.fetch;
+function crossRealmInit(init) {
+  if (!init) return {};
+  const out = {};
+  for (const k of ['method', 'cache', 'credentials', 'integrity', 'keepalive', 'mode', 'redirect', 'referrer', 'referrerPolicy']) {
+    if (init[k] !== undefined) out[k] = init[k];
+  }
+  if (init.headers) out.headers = Array.from(typeof init.headers[Symbol.iterator] === 'function' ? init.headers : Object.entries(init.headers));
+  const b = init.body;
+  if (b !== undefined && b !== null) {
+    if (typeof b === 'string') out.body = b;
+    else if (ArrayBuffer.isView(b)) out.body = Buffer.from(b.buffer, b.byteOffset, b.byteLength);
+    else if (Object.prototype.toString.call(b) === '[object ArrayBuffer]') out.body = Buffer.from(b);
+    else if (Object.prototype.toString.call(b) === '[object URLSearchParams]') out.body = String(b);
+    else return null;
+  }
+  const s = init.signal;
+  if (s) {
+    if (typeof s.addEventListener !== 'function') return null;
+    const ac = new AbortController();
+    if (s.aborted) ac.abort(s.reason); else s.addEventListener('abort', () => ac.abort(s.reason), { once: true });
+    out.signal = ac.signal;
+  }
+  return out;
+}
+const origLoad = Module._load;
+Module._load = function tfhLocalLoad(request, parent, isMain) {
+  const exp = origLoad.apply(this, arguments);
+  if (request !== 'next/dist/compiled/edge-runtime' || !exp || typeof exp.EdgeRuntime !== 'function' || exp.__tfhGuarded) return exp;
+  const Base = exp.EdgeRuntime;
+  class GuardedEdgeRuntime extends Base {
+    constructor(opts = {}) {
+      const userExtend = opts.extend;
+      super({
+        ...opts,
+        extend: (ctx) => {
+          const sandboxFetch = ctx.fetch;
+          ctx.fetch = (input, init) => {
+            // Next's sandbox wrapper always passes a URL string; anything else keeps the sandbox fetch.
+            const i = typeof input === 'string' ? crossRealmInit(init) : null;
+            return i === null ? sandboxFetch(input, init) : guardedFetch(input, i);
+          };
+          return userExtend ? userExtend(ctx) : ctx;
+        },
+      });
+    }
+  }
+  const wrapped = Object.assign(Object.create(Object.getPrototypeOf(exp)), exp, { EdgeRuntime: GuardedEdgeRuntime, __tfhGuarded: true });
+  return wrapped;
+};

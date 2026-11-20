@@ -48,6 +48,10 @@ Never copy real `STICKY_*` / `TF_COMPOSITION_*` values into `.env` while `EXTERN
   `fetch` / undici** in the containers that load it (memberportal, aff-landing-pages). It does **not** cover Node's
   `http`/`https` modules (or libraries built on them, e.g. axios), other runtimes, or **browsers** (a browser on the
   host talks to `cdn.builder.io` directly, outside the proxy).
+- Next.js **middleware** runs in the edge-runtime sandbox, whose bundled fetch cannot see the global dispatcher. The
+  preload hands that sandbox the guarded Node fetch (same proxy, same GET-only rule), so middleware fetches such as
+  the storefront's Builder `url-redirects` rules work locally. Requests whose body or signal cannot cross the
+  sandbox boundary keep the sandbox fetch, which has no route out of the `internal` network (fails closed).
 - What keeps Builder read-only overall: only `cdn.builder.io` (the public content CDN) is allowed, never `builder.io`
   or its write/admin API hosts (`make health` proves `builder.io` is denied); only *public* API keys are configured,
   and preflight refuses `BUILDER_PRIVATE_KEY`-style variables and any `bpk-` value.
