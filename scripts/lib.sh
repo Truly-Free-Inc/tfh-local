@@ -89,6 +89,31 @@ pattern_anchored() {
 
 dc() { docker compose --project-directory "$ROOT" -f "$ROOT/docker-compose.yml" "$@"; }
 
+# Docker Desktop's credential helper (credsStore "desktop") blocks forever when the macOS login keychain is locked
+# (screen lock), which hangs every build/pull of a base image (all public Docker Hub images here). If the helper
+# does not answer within 10 s, use an anonymous DOCKER_CONFIG for this run: same daemon (DOCKER_HOST from the current
+# context), same CLI plugins, no credential store. Public images only; nothing is written to ~/.docker.
+docker_creds_guard() {
+  local cfg helper host
+  cfg="$(sed -n 's/.*"credsStore"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "${DOCKER_CONFIG:-$HOME/.docker}/config.json" 2>/dev/null || true)"
+  [ -n "$cfg" ] || return 0
+  helper="docker-credential-$cfg"
+  command -v "$helper" >/dev/null 2>&1 || return 0
+  # A helper stuck on the keychain ignores SIGALRM/SIGTERM, so time-box it with SIGKILL.
+  local pid i
+  "$helper" list >/dev/null 2>&1 & pid=$!
+  for i in 1 2 3 4 5 6 7 8 9 10; do kill -0 "$pid" 2>/dev/null || break; sleep 1; done
+  if ! kill -0 "$pid" 2>/dev/null; then wait "$pid" && return 0; fi
+  kill -9 "$pid" 2>/dev/null; wait "$pid" 2>/dev/null || true
+  host="$(docker context inspect -f '{{.Endpoints.docker.Host}}' 2>/dev/null)" || return 0
+  [ -n "$host" ] || return 0
+  mkdir -p "$STATE/docker-anon"
+  printf '{\n  "auths": {}\n}\n' > "$STATE/docker-anon/config.json"
+  [ -e "$STATE/docker-anon/cli-plugins" ] || ln -s "${DOCKER_CONFIG:-$HOME/.docker}/cli-plugins" "$STATE/docker-anon/cli-plugins"
+  export DOCKER_CONFIG="$STATE/docker-anon" DOCKER_HOST="$host"
+  ylw "docker: credential helper '$helper' did not answer in 10 s (keychain locked?); using anonymous Docker Hub pulls for this run (DOCKER_CONFIG=.state/docker-anon)"
+}
+
 # Current branch -> sha map of all checked-out repos, as JSON object lines.
 repo_shas_json() {
   local first=1 name url def base role dir
