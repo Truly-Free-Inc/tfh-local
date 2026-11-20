@@ -6,7 +6,7 @@
 # Networks:
 #   internal : app containers. `internal: true` = NO direct internet. Outbound only via `proxy` (allow-list).
 #   egress   : only `proxy` sits here; it can reach the internet, but tinyproxy default-denies every host
-#              that is not in proxy/allowlist.txt (non-prod Sticky + TF only).
+#              that is not in the preflight-generated filter (.state/egress; reviewed dev/stage Sticky + TF dev only).
 #   edge     : only `ingress` sits here; it publishes host ports (Docker cannot publish ports of containers
 #              that are only on an internal network) and forwards TCP to services on `internal`.
 # Image builds use the Docker daemon's network, not these runtime networks, so registries (Go modules,
@@ -192,6 +192,10 @@ services:
       FACEBOOK_ACCESS_TOKEN: ""
       FACEBOOK_PIXEL_ID: ""
       CUSTOMERLABS_WEBHOOK_URL: ""
+      # reCAPTCHA Transaction Defense scores every order with Google reCAPTCHA Enterprise (defaults ON in tf-api). Google
+      # is unreachable from tfh-local, so with it on every order create is hard-blocked (403 RECAPTCHA_BLOCKED) before
+      # Sticky/TF. Off locally; no reCAPTCHA keys are ever set. Test orders only either way.
+      RECAPTCHA_TRANSACTION_DEFENSE_ENABLED: "false"
       # NEVER set: SYTE_LINE_* (Syteline/Infor), TFH_CORE_* / TFHCORE_* (tfhcore OUT), AVALARA_* (OUT).
     depends_on:
       seed: { condition: service_completed_successfully }
@@ -199,12 +203,14 @@ services:
       proxy: { condition: service_started }
     networks: [internal]
 
-  # Egress allow-list proxy: default deny. Only hosts in proxy/allowlist.txt (non-prod Sticky + TF).
+  # Egress allow-list proxy: default deny. Reads ONLY the filter scripts/preflight.sh generates in .state/egress
+  # (empty when EXTERNALS=offline; reviewed proxy/allowlist.txt + the derived Sticky API host when EXTERNALS=real)
+  # plus the fixed read-only list. Missing/empty generated filter = every Sticky/TF host denied (fail closed).
   proxy:
     build: ./proxy
     restart: unless-stopped
     volumes:
-      - ./proxy/allowlist.txt:/etc/tinyproxy/allowlist.txt:ro
+      - ./.state/egress:/etc/tinyproxy/egress:ro
       - ./proxy/readonly-allowlist.txt:/etc/tinyproxy/readonly-allowlist.txt:ro
     networks: [internal, egress]
 

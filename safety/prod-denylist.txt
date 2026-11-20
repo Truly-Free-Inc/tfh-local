@@ -1,9 +1,7 @@
 # Production host patterns (POSIX ERE, matched case-insensitively against host names). preflight.sh refuses
 # if Sticky/TF hosts or any proxy/allowlist.txt entry matches. Suffix patterns only; no internal host names.
-# NOTE: the trulyfreehome.com suffix also denies any NON-prod TFH host; EXTERNALS=real would need a reviewed
-# narrowing here (offline mode, the default, needs none).
+# A deny match can only be overridden by an EXACT literal host in safety/reviewed-exceptions.txt (see that file).
 # EVERY line must be ^...$ anchored with escaped dots (only \. , [..], .* or .+); preflight refuses otherwise.
-# TODO(Richard): add the PRODUCTION Sticky host and the PRODUCTION TF Composition API host.
 # All TFH production domains, by suffix (no individual internal host names in this PUBLIC repo).
 # Named hosts, if you need them, go in the gitignored safety/prod-denylist.local.txt (same format; also enforced).
 ^(.*\.)?trulyfreehome\.com$
@@ -11,8 +9,13 @@
 # Any host with a "prod"/"production" label
 ^(.*[.-])?prod(uction)?([.-].*)?$
 # Sticky (any instance, incl. the limelightcrm.com legacy domain): the only known instance is the one prod uses.
+# EXTERNALS=real reaches exactly limelightcrm.com + its derived API host via safety/reviewed-exceptions.txt (Michael
+# 2026-11-20); every other sticky.io / limelightcrm.com host stays denied.
 ^(.*\.)?sticky\.io$
 ^(.*\.)?limelightcrm\.com$
+# TF (trulyfree.com): every host, incl. the prod TF Composition API. EXTERNALS=real reaches only the TF DEV API host,
+# via its exact entry in safety/reviewed-exceptions.txt (Michael 2026-11-20).
+^(.*\.)?trulyfree\.com$
 # Never-allowed services (local stack must not talk to them at all)
 ^(.*\.)?klaviyo\.com$
 ^(.*\.)?mailgun\.(net|com|org)$

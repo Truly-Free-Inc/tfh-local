@@ -43,7 +43,16 @@ run_suite() { # label grep [grep-invert]
       MEMBER_PORTAL_PASSWORD="${TEST_CUSTOMER_PORTAL_PASSWORD:-}" \
       ADMIN_USER="${LOCAL_ADMIN_EMAIL:-}" ADMIN_PASSWORD="${LOCAL_ADMIN_PASSWORD:-}" \
       TF_API_BASIC_AUTH="${TF_API_BASIC_AUTH_USERNAME:-}:${TF_API_BASIC_AUTH_PASSWORD:-}" \
+      TFH_EXTERNALS="$(printf '%s' "${EXTERNALS:-offline}" | tr '[:upper:]' '[:lower:]')" \
       BUILDER_PUBLIC_API_KEY="${LOCAL_BUILDER_PUBLIC_KEY_FUNNEL:-}" && \
+    for v in TEST_CUSTOMER_FIRST_NAME TEST_CUSTOMER_LAST_NAME TEST_CUSTOMER_EMAIL TEST_CUSTOMER_PHONE TEST_CUSTOMER_STREET \
+             TEST_CUSTOMER_CITY TEST_CUSTOMER_STATE TEST_CUSTOMER_ZIP TEST_CUSTOMER_COUNTRY \
+             TFH_STICKY_CARD_NUMBER TFH_STICKY_CARD_EXP TFH_STICKY_CARD_CVV TFH_STICKY_CARD_NAME \
+             TF_SPREEDLY_CARD_NUMBER TF_SPREEDLY_CARD_EXP TF_SPREEDLY_CARD_CVV TF_SPREEDLY_CARD_NAME; do
+      # Order tests (EXTERNALS=real): "test test" customer + Sticky TEST card from .env, exported only when set.
+      # The suite refuses any other name (fixtures/test-customer.ts) and every order goes through lib/test-order-guard.ts.
+      if [ -n "${!v:-}" ]; then export "$v=${!v}"; fi
+    done; \
     env TARGET_ENV=local TZ=UTC TFR_RETRIES=0 \
       PLAYWRIGHT_HTML_OUTPUT_DIR="$RUN/$label/html" PLAYWRIGHT_HTML_REPORT="$RUN/$label/html" PLAYWRIGHT_HTML_OPEN=never \
       PLAYWRIGHT_JSON_OUTPUT_NAME="$RUN/$label/results.json" \
