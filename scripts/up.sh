@@ -12,6 +12,12 @@ docker_creds_guard
 # VECTOR=1 also starts the vector-search POC (profile `vector`).
 [ "${VECTOR:-}" = "1" ] && export COMPOSE_PROFILES=vector
 dc up -d --build
+# The proxy builds its filter once at start from .state/egress/allowlist.txt (written by preflight above). Recreate it
+# when that file changed since the proxy last started, so an EXTERNALS switch takes effect (and never lingers).
+EG="$STATE/egress/allowlist.txt"; APPLIED="$STATE/egress/.applied.sha"
+if [ -f "$EG" ] && [ "$(shasum "$EG" | cut -d' ' -f1)" != "$(cat "$APPLIED" 2>/dev/null)" ]; then
+  dc up -d --no-deps --force-recreate proxy && shasum "$EG" | cut -d' ' -f1 > "$APPLIED"
+fi
 # LOCAL_APP_MODE=prod: the Next.js apps build on first start (serialized; several minutes). Wait for them first.
 "$ROOT/scripts/warmup.sh" --wait-only
 # `compose up --wait` treats the one-shot jobs' exit 0 as failure (compose 2.31), so poll our own health check.

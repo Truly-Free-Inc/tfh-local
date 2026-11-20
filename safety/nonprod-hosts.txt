@@ -1,4 +1,9 @@
 # Non-prod hosts allowed for STICKY_DOMAIN and TF_COMPOSITION_API_BASE_URL (host part). POSIX ERE, one per line.
-# preflight.sh REFUSES to start unless both hosts match a line here AND match nothing in prod-denylist.txt.
-# Intentionally EMPTY until confirmed: the stack will not start until a reviewer adds the non-prod hosts.
-# TODO(Richard): add the non-prod Sticky host and the non-prod TF Composition API host (anchored, e.g. ^host\.example$).
+# preflight.sh REFUSES EXTERNALS=real unless both hosts match a line here AND are not on safety/prod-denylist.txt
+# (a host on the deny list passes only if it is listed EXACTLY in safety/reviewed-exceptions.txt).
+# Approved by Michael 2026-11-20 (5:37 PM ET): use the Sticky and TF endpoints develop/stage use; test orders only.
+# Sticky: the one instance develop/stage/prod share (STICKY_DOMAIN). tf-api calls https://<STICKY_APP_KEY>.<STICKY_DOMAIN>;
+# preflight derives that single API host into the gitignored generated proxy filter (the app key is never committed).
+^limelightcrm\.com$
+# TF Composition API: the TF DEV system that develop and stage use. The prod TF API host stays denied.
+^api\.dev\.trulyfree\.com$

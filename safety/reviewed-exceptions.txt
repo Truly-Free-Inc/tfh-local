@@ -1,0 +1,13 @@
+# Reviewed exceptions to safety/prod-denylist.txt. POSIX ERE, but every entry must be ONE literal host (^host$, escaped
+# dots, no wildcards); preflight refuses anything else. A host listed here may pass the deny list ONLY when it equals
+# the entry exactly, plus (for STICKY_DOMAIN only) the single derived Sticky API host <STICKY_APP_KEY>.<STICKY_DOMAIN>.
+# Every other host the deny list matches (sticky.io, www.limelightcrm.com, other *.limelightcrm.com, api.trulyfree.com,
+# Klaviyo, Mailgun, AWS, Avalara, Infor/Syteline, tfhcore, trulyfreehome.com...) stays DENIED.
+# Each entry must also be on safety/nonprod-hosts.txt.
+#
+# Michael 2026-11-20 5:37 PM ET: "We should be using the Sticky and TF endpoints we use in dev and stage. They are the
+# same as prod and fine to call for test orders." Test orders only.
+# Sticky (the instance develop/stage/prod share):
+^limelightcrm\.com$
+# TF Composition API, DEV system (what develop and stage use; the prod TF API host stays denied):
+^api\.dev\.trulyfree\.com$

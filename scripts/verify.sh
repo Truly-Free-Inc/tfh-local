@@ -43,6 +43,7 @@ run_suite() { # label grep [grep-invert]
       MEMBER_PORTAL_PASSWORD="${TEST_CUSTOMER_PORTAL_PASSWORD:-}" \
       ADMIN_USER="${LOCAL_ADMIN_EMAIL:-}" ADMIN_PASSWORD="${LOCAL_ADMIN_PASSWORD:-}" \
       TF_API_BASIC_AUTH="${TF_API_BASIC_AUTH_USERNAME:-}:${TF_API_BASIC_AUTH_PASSWORD:-}" \
+      TFH_EXTERNALS="$(printf '%s' "${EXTERNALS:-offline}" | tr '[:upper:]' '[:lower:]')" \
       BUILDER_PUBLIC_API_KEY="${LOCAL_BUILDER_PUBLIC_KEY_FUNNEL:-}" && \
     env TARGET_ENV=local TZ=UTC TFR_RETRIES=0 \
       PLAYWRIGHT_HTML_OUTPUT_DIR="$RUN/$label/html" PLAYWRIGHT_HTML_REPORT="$RUN/$label/html" PLAYWRIGHT_HTML_OPEN=never \
