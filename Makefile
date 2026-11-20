@@ -68,5 +68,5 @@ check-secrets: ## scan this repo for secrets (run before every commit)
 config: ## validate docker-compose.yml
 	@docker compose config -q && echo "compose config: OK"
 
-prove-admin: ## headless staff login (Kratos browser flow) -> admin /dashboard; MODE=api needed while flag enable_admin_password_login is absent locally
+prove-admin: ## headless staff login: funnels /internal_admin/login form (Kratos) -> admin /dashboard; MODE=api skips the form
 	@set -a; . ./.env; set +a; node scripts/prove-admin-login.cjs

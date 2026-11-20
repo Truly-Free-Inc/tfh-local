@@ -130,7 +130,15 @@ offline (`lib/local-offline.ts`, reason "requires external X (offline in tfh-loc
 - platform/cf-geo: Cloudflare.
 In local runs the suite also blocks the live Klaviyo, Amazon ads, Northbeam and the prod track pixel in the browser:
 they hung the page `load` event and must not receive events from a local run.
-Other skips are by design of the suite (admin = stage only, orders need the test-customer secrets + Sticky).
+Other skips are by design of the suite (orders need the test-customer secrets + Sticky).
+
+Admin (Michael, 2026-11-20): the suite's READ-ONLY admin tests also run locally (tfh-automation PR #17), logged in as
+the seeded staff admin `LOCAL_ADMIN_EMAIL` = `local-admin@trulyfreehome.com` (`make verify` exports it as
+`ADMIN_USER`/`ADMIN_PASSWORD`). It must be a company address: the funnels Kratos login form enforces the seeded
+email-domain-restriction flag. It is a local Kratos identity, not a mailbox (Kratos courier -> Mailpit; nothing else
+sends mail). `make seed-auth` also seeds one placeholder admin note template (the void/refund dialogs need an active
+one). Admin tests that place or change orders stay stage only (skipped locally: "requires external Sticky (test order
+create)"); those that read existing test orders skip with "requires external Sticky (no test orders locally)".
 
 Known local failures (not offline externals):
 - Feature flags: `make seed-catalog` loads the approved prod snapshot. The funnels feature-flag proxy still answers 500

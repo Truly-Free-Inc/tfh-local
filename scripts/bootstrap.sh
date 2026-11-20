@@ -85,7 +85,9 @@ fill KRATOS_SECRETS_COOKIE  0 rnd 32
 fill KRATOS_SECRETS_CIPHER  0 rnd 16   # 32 hex chars (Kratos needs exactly 32)
 fill TEST_CUSTOMER_PORTAL_EMAIL    0 lit test@tfh-local.test
 fill TEST_CUSTOMER_PORTAL_PASSWORD 0 rnd 16
-fill LOCAL_ADMIN_EMAIL             0 lit admin@tfh-local.test
+# Company-domain address (funnels' Kratos login form enforces the domain restriction flag); local-only identity,
+# not a real mailbox. seed/auth-users.sh allows exactly this @trulyfreehome.com address and refuses any other.
+fill LOCAL_ADMIN_EMAIL             0 lit local-admin@trulyfreehome.com
 fill LOCAL_ADMIN_PASSWORD          0 rnd 16
 # tf-api HTTP Basic auth (BASIC_AUTH_ENABLED=true locally): server-to-server creds for memberportal/admin/funnels and
 # the suite's local env. Local-only generated values, not any real environment's.
