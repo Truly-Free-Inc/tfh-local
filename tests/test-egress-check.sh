@@ -54,5 +54,36 @@ expect_true "names a leaking host" grep -q 'egress CONNECT api.sticky.io: expect
 kill $FP 2>/dev/null; wait $FP 2>/dev/null
 rm -f "$SB/proxy/readonly-allowlist.txt"; out="$(PATH="$BIN:$PATH" bash "$SB/scripts/egress-check.sh" 2>&1)"; rc=$?
 expect_true "proxy down -> egress FAILED (rc=$rc)" [ $rc -eq 1 ]
+
+# EXTERNALS=real (Michael 2026-11-20): the reviewed Sticky/TF dev hosts must be 200 (Sticky API host shown masked),
+# everything else incl. other limelightcrm.com hosts and the prod TF API host still 403.
+printf '%s\n' '# test' '^cdn\.builder\.io$' > "$SB/proxy/readonly-allowlist.txt"
+printf '%s\n' EXTERNALS=real STICKY_DOMAIN=limelightcrm.com STICKY_APP_KEY=dummyappkey > "$SB/.env"
+ALLOW_HOSTS="cdn.builder.io,limelightcrm.com,api.dev.trulyfree.com,dummyappkey.limelightcrm.com" python3 -I - "$PORT" <<'PY' &
+import socketserver, sys, os
+allow = set(os.environ["ALLOW_HOSTS"].split(","))
+class H(socketserver.StreamRequestHandler):
+    def handle(self):
+        first = self.rfile.readline().decode(errors="replace").split()
+        host = first[1].split(":")[0].replace("http://", "").strip("/") if len(first) > 1 else ""
+        self.wfile.write(f"HTTP/1.0 {'200 Connection established' if host in allow else '403 Filtered'}\r\n\r\n".encode())
+class S(socketserver.ThreadingTCPServer): allow_reuse_address = True
+S(("127.0.0.1", int(sys.argv[1])), H).serve_forever()
+PY
+FP=$!; sleep 1
+out="$(run)"; rc=$?
+expect_true "real: egress OK (rc=$rc)" [ $rc -eq 0 ]
+for h in limelightcrm.com api.dev.trulyfree.com '<STICKY_APP_KEY>.limelightcrm.com'; do
+  expect_true "real: allows $h" grep -qF "ok: egress CONNECT $h -> 200" <<<"$out"
+done
+for h in api.trulyfree.com www.limelightcrm.com api.limelightcrm.com sticky.io a.klaviyo.com; do
+  expect_true "real: still denies $h" grep -q "ok: egress CONNECT $h -> 403" <<<"$out"
+done
+expect_false "real: never prints the Sticky app key" grep -q dummyappkey <<<"$out"
+printf '%s\n' EXTERNALS=offline > "$SB/.env"
+out="$(run)"; rc=$?
+expect_true "offline against a real-mode proxy -> egress FAILED (rc=$rc)" [ $rc -eq 1 ]
+expect_true "offline names the reachable TF dev host" grep -q 'egress CONNECT api.dev.trulyfree.com: expected 403' <<<"$out"
+kill $FP 2>/dev/null; wait $FP 2>/dev/null
 rm -rf "$SB"
 done_tests

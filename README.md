@@ -6,14 +6,16 @@ same ticket branch, verify everything locally (including the core gate), then op
 ## SAFETY (read before anything else)
 - **No production anything.** Local only. No prod hosts, credentials or data.
 - **Never Syteline / Infor.** Never configured, never written. **tfhcore and Avalara are OUT.**
-- **Sticky + TF: OFFLINE by default** (`EXTERNALS=offline`): no Sticky/TF values, empty egress allow-list, so
-  checkout / order create / cancel / order-sync fail locally by design. `EXTERNALS=real` (later, reviewed hosts
-  only) = real NON-PROD instances, TEST ORDERS ONLY. Do not touch or widen tfh-automation `lib/test-order-guard.ts`.
+- **Sticky + TF: `EXTERNALS=real` is the standard setup** (approved by Michael 2026-11-20): the shared Sticky instance
+  (`limelightcrm.com`) and the TF Composition API **dev** system (`api.dev.trulyfree.com`), the same ones develop and
+  stage use. **TEST ORDERS ONLY.** The prod TF API host stays denied. `EXTERNALS=offline` (or empty) is the safe
+  fallback without credentials: no Sticky/TF reach, checkout / order create / cancel / order-sync fail locally.
+  Do not touch or widen tfh-automation `lib/test-order-guard.ts`.
 - **Never change feature flags** (seeded once at first DB init).
 - **No secrets in git.** `.env.example` = names only. Run `make check-secrets` before every commit.
 - **`scripts/preflight.sh` runs before `make up` / `make verify` and refuses** on any violation. Do not bypass it.
-- App containers have **no direct internet**; egress only through an allow-list proxy (non-prod Sticky + TF only,
-  empty offline) plus a fixed read-only list (`cdn.builder.io`, approved by Michael 2026-11-19).
+- App containers have **no direct internet**; egress only through an allow-list proxy (the reviewed Sticky + TF dev hosts when
+  `EXTERNALS=real`; preflight generates the filter, empty offline) plus a fixed read-only list (`cdn.builder.io`, approved by Michael 2026-11-19).
 - **AI opens PRs, never merges.**
 
 Details: [docs/safety.md](docs/safety.md).
@@ -53,9 +55,10 @@ Test users (seeded by `make up` / `make seed-auth`; emails and passwords are in 
   `make verify` passes it to the suite as `ADMIN_USER` / `ADMIN_PASSWORD`.
 
 What is offline, and why:
-- **Sticky + TF Composition API: OFFLINE** (`EXTERNALS=offline`). The stage Sticky host can't be told apart from
-  prod, so no Sticky/TF values exist here and the proxy can't reach them. Checkout, order create, cancel, ship-now,
-  swap and login order-sync results fail locally **by design**.
+- **Sticky + TF Composition API: real in the standard setup (`EXTERNALS=real`), offline otherwise.** Reachable
+  hosts are exactly `limelightcrm.com`, the app-key Sticky API host derived by preflight, and `api.dev.trulyfree.com`
+  (see `safety/reviewed-exceptions.txt`). Credentials come from the team's dev/stage set and are never committed. With
+  `EXTERNALS=offline`/empty, checkout, order create, cancel, ship-now, swap and login order-sync fail locally **by design**.
 - **tfhcore, Avalara, Syteline/Infor: never configured.** Portal flows still on tfhcore (addresses, header search,
   email change, old cancel flow, token refresh) fail.
 - **Klaviyo, S3, mail: local fakes** (recorder, MinIO, Mailpit). tf-api's Mailgun mail is not sent.
@@ -68,7 +71,8 @@ What is offline, and why:
 ```bash
 make bootstrap LOCAL_SRC=~/projects   # worktrees into apps/ (idempotent); `make refresh` fast-forwards them later
 $EDITOR .env                   # created from .env.example: set APP_ENV=local, generated local passwords, ports.
-                               # EXTERNALS=offline: leave every STICKY_* / TF_COMPOSITION_* EMPTY.
+                               # EXTERNALS=real: fill STICKY_* / TF_* from the team's dev/stage set (never commit).
+                               # No credentials? Leave EXTERNALS empty (offline) and every STICKY_* / TF_COMPOSITION_* EMPTY.
 make up                        # preflight + build + start core services, waits for healthy, runs `make health`
 make health                    # tf-api /health, Mailpit, MinIO, jobs, and a proxy-deny proof
 make ticket KEY=TFHFUNNEL-1234
@@ -97,9 +101,9 @@ AI per-ticket instructions: [docs/ai-loop.md](docs/ai-loop.md). Suite env: [docs
 | postgres 17.4, redis 7.2 | wired | Mirrors tf-api's compose + `db-bootstrap` init. |
 | flyway | wired | tf-api's own `Dockerfile.flyway` (apps/tf-api/flyway). |
 | seed | wired (placeholder data) | One-time seed after Flyway; flags never changed afterwards. |
-| tf-api | **live** | `http://localhost:13000/health`. Sticky/TF unset (offline); Redis plain (no TLS); OTEL to loopback. |
+| tf-api | **live** | `http://localhost:13000/health`. Sticky/TF per `EXTERNALS` (real or unset/offline); Redis plain (no TLS); OTEL to loopback. |
 | tf-api (build) | wired | `docker/tf-api.Dockerfile` multi-stage (Go 1.24.3 build from `src/`, debian-slim runtime). |
-| proxy | **live** | tinyproxy egress allow-list, default deny; empty list in offline mode. |
+| proxy | **live** | tinyproxy egress allow-list, default deny; filter generated by preflight (empty in offline mode). |
 | ingress | wired | nginx stream; publishes ports on 127.0.0.1. |
 | mailpit, minio + minio-init, klaviyo-recorder | **live** | Mailpit UI `:18025`, MinIO API `:19000` / console `:19001` (`pgsty/minio` community fork; upstream images are gone), recorder `:18090`. |
 | tf-apigateway, kratos, keto, gateway-postgres | **live** | Gateway `:13004/health`; Kratos public `:14433` (admin `:14434`, loopback); Keto internal. Mirrors the gateway repo's compose; Kratos config `auth/kratos/kratos.yml` (localhost URLs, Google off, courier -> Mailpit). |

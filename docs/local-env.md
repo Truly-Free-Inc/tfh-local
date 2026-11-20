@@ -103,10 +103,10 @@ Gate tag: `@gate` (`npm run test:gate` = `--grep @gate --grep-invert @quarantine
   (suite: map these to the portal test-customer variables for the `local` env).
 - Login path: portal `/portal/api/v1/auth/login` -> tf-api (bcrypt in `customer_auth`) -> session in the LOCAL Redis
   (`SESSION_WRITE_NEXTGEN_REDIS_ENABLED=true`; `REDIS_HOST_TFH_CORE` is never set).
-- Login-time Sticky calls fail in milliseconds (offline). `login_order_sync_enabled` has no flag row locally, so sync is skipped.
+- Login-time Sticky calls fail in milliseconds when `EXTERNALS=offline` (they reach the shared Sticky with `EXTERNALS=real`). `login_order_sync_enabled` has no flag row locally, so sync is skipped.
 - `next dev` hydrates late: fill the login form after `load` (see `scripts/prove-portal-login.cjs`). First hit of each
   route compiles it (~20-30 s).
-- Offline failures (expected): the dashboard sidebar
+- Offline failures (expected; Sticky/TF are real only with `EXTERNALS=real`): the dashboard sidebar
   (Builder symbol), Google login, Google Fonts (fallback font), GTM/Yotpo/referral scripts, portal CloudWatch
   logger (defaults to a remote develop host; DNS fails, nothing leaves), OTEL trace proxy (500, harmless), and every
   tfhcore-backed flow (addresses, header search, logger, email change, old cancel flow, token refresh).
@@ -131,7 +131,9 @@ Gate tag: `@gate` (`npm run test:gate` = `--grep @gate --grep-invert @quarantine
 ## Gate status in tfh-local (M6, Nov 19 2026) and what is skipped on purpose
 `make verify` exports `BUILDER_PUBLIC_API_KEY` (the public read-only key from `.env`) and `TF_API_BASIC_AUTH` to the
 suite. tfh-automation skips, only when `TARGET_ENV=local`, the tests whose answer comes from a service tfh-local keeps
-offline (`lib/local-offline.ts`, reason "requires external X (offline in tfh-local)"):
+offline (`lib/local-offline.ts`, reason "requires external X (offline in tfh-local)"). `make verify` also exports
+`TFH_EXTERNALS=<real|offline>`; the suite runs its Sticky/TF tests only when `real` (approved by Michael 2026-11-20,
+test orders only). Spreedly, Avalara, Cloudflare, image CDN, Braintree and Google stay offline/skipped either way:
 - api/tax: Avalara (tax). api/address-validation: Avalara/Google/USPS.
 - storefront/image-cdn: product images go through funnels' `/_next/image`, which fetches the prod image CDN server-side
   (container egress blocked by design).
@@ -139,7 +141,7 @@ offline (`lib/local-offline.ts`, reason "requires external X (offline in tfh-loc
 - platform/cf-geo: Cloudflare.
 In local runs the suite also blocks the live Klaviyo, Amazon ads, Northbeam and the prod track pixel in the browser:
 they hung the page `load` event and must not receive events from a local run.
-Other skips are by design of the suite (orders need the test-customer secrets + Sticky).
+Other skips are by design of the suite (orders need the test-customer secrets; Sticky orders need `EXTERNALS=real`).
 
 Admin (Michael, 2026-11-20): the suite's READ-ONLY admin tests also run locally (tfh-automation PR #17), logged in as
 the seeded staff admin `LOCAL_ADMIN_EMAIL` = `local-admin@trulyfreehome.com` (`make verify` exports it as
