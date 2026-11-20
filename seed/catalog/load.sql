@@ -1,6 +1,7 @@
 -- Catalog loader (run via `make seed-catalog`). Catalog-only export from prod tf-api replica (Cerebro, nextgen_datastream_public).
 -- First run locally 2026-11-19 (74 tables, exported == loaded). Loads ONLY the allow-listed tables in data/*.json (see ALLOWLIST.md / REPORT.md).
--- Never touches feature_flags, customers, orders, subscriptions, internal_users, or any other table.
+-- Also loads feature_flags (prod snapshot, Michael approved 2026-11-19 4:59 PM ET; see seed/catalog/README.md).
+-- Never touches customers, orders, subscriptions, internal_users, or any other table.
 --
 -- Run from THIS directory with a psql that can read these files (the \set backticks run `cat` on the psql
 -- client host), e.g. from the host against the local Postgres port:
@@ -180,6 +181,8 @@ INSERT INTO _catalog_stage VALUES (72, 'volume_discount_tiers', :'j'::jsonb);  -
 INSERT INTO _catalog_stage VALUES (73, 'why_you_love_it_facts', :'j'::jsonb);  -- 392 rows
 \set j `cat data/why_you_love_it_offer_facts.json`
 INSERT INTO _catalog_stage VALUES (74, 'why_you_love_it_offer_facts', :'j'::jsonb);  -- 73 rows
+\set j `cat data/feature_flags.json`
+INSERT INTO _catalog_stage VALUES (75, 'feature_flags', :'j'::jsonb);  -- 103 rows (approved prod snapshot)
 \unset j
 SELECT set_config('tfh.catalog_mode', :'mode', true);
 
@@ -200,6 +203,10 @@ BEGIN
     FOR r IN SELECT tbl FROM _catalog_stage ORDER BY ord DESC LOOP
       EXECUTE format('DELETE FROM public.%I', r.tbl);
     END LOOP;
+  ELSE
+    -- feature_flags is a snapshot (nothing references it): always replaced, also in upsert mode, so a stale local
+    -- row (e.g. the 3 init rows) can't collide on (name, environment).
+    DELETE FROM public.feature_flags WHERE EXISTS (SELECT 1 FROM _catalog_stage WHERE tbl = 'feature_flags');
   END IF;
   FOR r IN SELECT tbl, rows FROM _catalog_stage ORDER BY ord LOOP
     -- only columns present both locally and in the export (keys of any row)
@@ -228,6 +235,13 @@ BEGIN
     END IF;
   END LOOP;
 END $$;
+
+-- feature_flags localization: flag VALUES that are prod URLs point at the local funnels app instead (no link a local
+-- run generates may lead to prod). Targeting prefixes in `metadata` are left as-is (they simply never match localhost).
+UPDATE public.feature_flags
+   SET metadata_arbitrary = regexp_replace(metadata_arbitrary::text, 'https://([a-z0-9-]+[.])?trulyfreehome[.]com',
+                                           'http://localhost:13003', 'g')::jsonb
+ WHERE metadata_arbitrary::text ~ 'https://([a-z0-9-]+[.])?trulyfreehome[.]com';
 
 -- Post-load sanity (read-only): row counts per loaded table.
 SELECT s.tbl, jsonb_array_length(s.rows) AS exported,

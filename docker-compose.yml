@@ -538,8 +538,9 @@ services:
       NEXT_PUBLIC_SHOW_TRAVEL_SIZES_CATEGORY: "true"
       NEXT_PUBLIC_REDIRECT_CACHE_TTL_MINUTES: "0"
       # Only the real primary domain is indexable; unset, EVERY host (incl. localhost) answered "index, follow".
-      # localhost now gets noindex and a Disallow-all robots.txt, like any non-primary host.
-      NEXT_PUBLIC_PRIMARY_INDEXABLE_DOMAIN: www.trulyfreehome.com
+      # localhost now gets noindex and a Disallow-all robots.txt, like any non-primary host. Any value other than the local
+      # host works; a non-routable placeholder keeps named prod hosts out of tracked files (tests/test-patterns.sh).
+      NEXT_PUBLIC_PRIMARY_INDEXABLE_DOMAIN: primary-domain.invalid
       NEXT_PUBLIC_HOST_NAME: localhost
       NEXT_PUBLIC_MEMBER_PORTAL_LOGIN_URL: http://localhost:${MEMBERPORTAL_HOST_PORT:-13001}/login
       CORS_ALLOWED_ORIGINS: http://localhost:${FUNNELS_HOST_PORT:-13003},http://localhost:${ADMIN_PANEL_HOST_PORT:-13002}

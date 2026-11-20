@@ -7,5 +7,6 @@ One-time data seed for a fresh local DB. `seed` service in docker-compose runs `
 - **Feature flags are seeded here once and never changed.** No script updates them. Tests only read them.
 - Test data only: "test test" customers, test cards, catalog rows. **No PII, no prod/stage dumps in git.**
 - Optional catalog: `make seed-catalog` loads a catalog export (definition tables only) from the gitignored `.state/catalog-export/`. Every load first runs a customer/order DATA scan over every column and value (`seed/catalog/pii_scan.py`): tables whose rows are customer/order records are excluded, offending columns dropped (see `seed/catalog/README.md`). The data never enters git.
-- `10_feature_flags.sql` is a placeholder until the approved non-prod flag snapshot is provided.
+- `10_feature_flags.sql` is a first-init placeholder; the approved prod flag snapshot is loaded by `make seed-catalog`
+  (see seed/catalog/README.md).
 - Catalog seeds can reuse `apps/tf-api/db-bootstrap/seeds/` (TODO: decide which of the 14 files to include).
