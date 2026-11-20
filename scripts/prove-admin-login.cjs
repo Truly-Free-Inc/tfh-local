@@ -1,10 +1,11 @@
 #!/usr/bin/env node
 // Headless proof: staff login to the LOCAL admin panel as the seeded local admin (Kratos + Keto role admin).
 // Default flow: admin /login -> funnels /internal_admin/login (Kratos browser flow) -> back to admin.
-// The funnels login form only shows the password fields when feature flag enable_admin_password_login is on;
-// the local DB has no such flag (and tfh-local never adds/toggles flags). MODE=api therefore runs Kratos's
-// browser login flow over HTTP (local Kratos only), sets it as the admin `sessionToken` cookie and then
-// loads the admin dashboard: this proves admin panel + gateway + Kratos + Keto end to end without the form.
+// The funnels login form shows the password fields when feature flag enable_admin_password_login is on, and
+// only accepts company-domain emails (email-domain-restriction flag; both from the seeded flag snapshot, which
+// tfh-local never toggles). So LOCAL_ADMIN_EMAIL is local-admin@trulyfreehome.com (a local identity, no mailbox).
+// MODE=api instead runs Kratos's browser login flow over HTTP (local Kratos only), sets it as the admin
+// `sessionToken` cookie and loads the admin dashboard: proves panel + gateway + Kratos + Keto without the form.
 // Every request that is not to localhost/127.0.0.1 is aborted, so the browser cannot reach any real host.
 // Usage (from tfh-local root):  make prove-admin   (needs PW_MODULE like make prove-login)
 const path = require('path');
@@ -65,7 +66,9 @@ if (!email || !password) { console.error('LOCAL_ADMIN_EMAIL/_PASSWORD not set (s
       await page.waitForTimeout(500);
       if ((await emailIn.inputValue()) === email && (await pwIn.inputValue()) === password) break;
     }
-    await page.locator('form:has(input[type="password"]) button[type="submit"]').first().click();
+    await page.getByRole('button', { name: /got it/i }).click({ timeout: 1500 }).catch(() => {}); // cookie banner
+    // The Kratos form's submit is a type="button" labelled "Sign in with password" (not a type=submit button).
+    await page.getByRole('button', { name: /sign in with password/i }).click();
     await page.waitForURL((u) => u.port === new URL(admin).port && !/\/login/.test(u.pathname), { timeout: 120000 });
     await page.waitForLoadState('load', { timeout: 120000 });
     await page.waitForTimeout(8000); // client-side AuthGuard: profile + role check

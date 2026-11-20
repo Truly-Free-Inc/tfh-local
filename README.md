@@ -47,7 +47,10 @@ plus `npm ci` (Playwright browsers: `npx playwright install webkit chromium fire
 Test users (seeded by `make up` / `make seed-auth`; emails and passwords are in `.env`, never in git):
 - **Portal customer "test test"**: `TEST_CUSTOMER_PORTAL_EMAIL` / `TEST_CUSTOMER_PORTAL_PASSWORD` (`make verify` passes
   them to the suite as `MEMBER_PORTAL_USER` / `MEMBER_PORTAL_PASSWORD`).
-- **Local staff admin** (Kratos + Keto role `admin`): `LOCAL_ADMIN_EMAIL` / `LOCAL_ADMIN_PASSWORD`.
+- **Local staff admin** (Kratos + Keto role `admin`): `LOCAL_ADMIN_EMAIL` / `LOCAL_ADMIN_PASSWORD`. The email is
+  `local-admin@trulyfreehome.com` (the funnels staff login form only accepts company-domain addresses, per the seeded
+  email-domain-restriction flag). It is a local Kratos identity, not a real mailbox: local mail goes to Mailpit only.
+  `make verify` passes it to the suite as `ADMIN_USER` / `ADMIN_PASSWORD`.
 
 What is offline, and why:
 - **Sticky + TF Composition API: OFFLINE** (`EXTERNALS=offline`). The stage Sticky host can't be told apart from

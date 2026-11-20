@@ -2,7 +2,8 @@
 # Seed LOCAL auth users (idempotent; re-run any time). Local containers only.
 #   1. Portal test customer ("test test") in the local tf-api DB: customers + customer_auth (bcrypt cost 12).
 #      external_customer_id is a local placeholder so login never needs Sticky to look the customer up.
-#   2. Same customer + a local admin as Kratos identities (local Kratos admin API on the 127.0.0.1 ingress port,
+#   2. One local placeholder admin note template (the void/refund dialogs need an active one).
+#   3. Same customer + a local admin as Kratos identities (local Kratos admin API on the 127.0.0.1 ingress port,
 #      same payload as tf-apigateway's auth:create-user job); admin gets role `admin` in Keto (after
 #      tf-apigateway auth:seed-permissions).
 # Emails/passwords come from .env (gitignored): TEST_CUSTOMER_PORTAL_EMAIL/_PASSWORD, LOCAL_ADMIN_EMAIL/_PASSWORD.
@@ -15,8 +16,18 @@ load_env
 
 : "${TEST_CUSTOMER_PORTAL_EMAIL:?set in .env}" "${TEST_CUSTOMER_PORTAL_PASSWORD:?set in .env}"
 : "${LOCAL_ADMIN_EMAIL:?set in .env}" "${LOCAL_ADMIN_PASSWORD:?set in .env}"
-case "$TEST_CUSTOMER_PORTAL_EMAIL$LOCAL_ADMIN_EMAIL" in
-  *@trulyfreehome.com*|*@gmail.com*) die "REFUSED: seed emails must be local-only (e.g. *@tfh-local.test)";;
+# Real-looking domains are refused, with ONE exception: the local admin may be exactly local-admin@trulyfreehome.com
+# (Michael, 2026-11-20). The funnels Kratos login form enforces the company-domain restriction from the seeded
+# feature-flag snapshot, so a staff login needs a company address. It is a local-only Kratos identity, not a real
+# mailbox; local mail never leaves the machine (Kratos courier -> Mailpit; tf-api Mailgun is unset; no egress).
+LOCAL_ADMIN_COMPANY_EMAIL=local-admin@trulyfreehome.com
+lc() { printf '%s' "$1" | tr '[:upper:]' '[:lower:]'; }
+case "$(lc "$TEST_CUSTOMER_PORTAL_EMAIL")" in
+  *@trulyfreehome.com*|*@gmail.com*) die "REFUSED: TEST_CUSTOMER_PORTAL_EMAIL must be local-only (e.g. *@tfh-local.test)";;
+esac
+case "$(lc "$LOCAL_ADMIN_EMAIL")" in
+  "$LOCAL_ADMIN_COMPANY_EMAIL") ;;
+  *@trulyfreehome.com*|*@gmail.com*) die "REFUSED: LOCAL_ADMIN_EMAIL must be $LOCAL_ADMIN_COMPANY_EMAIL or local-only (e.g. *@tfh-local.test)";;
 esac
 command -v python3 >/dev/null || die "python3 is required (builds the Kratos JSON from stdin)"
 
@@ -47,6 +58,15 @@ SELECT 'customer id=' || c.id || ' name=' || c.first_name || ' ' || c.last_name 
 FROM customers c LEFT JOIN customer_auth a ON a.customer_id = c.id WHERE lower(c.email) = :'email';
 SQL
 } | dc exec -T postgres psql -At -U "$DB_USER" -d "$DB_NAME"
+
+# The local staff admin's void/refund dialogs need an active admin note template (tf-api VOID_NOTE_TYPE_REQUIRED);
+# deployed envs have staff-made ones, a fresh local DB has none. One local placeholder, idempotent (by name).
+echo "seed: admin note template (local placeholder)"
+dc exec -T postgres psql -v ON_ERROR_STOP=1 -q -U "$DB_USER" -d "$DB_NAME" <<'SQL'
+INSERT INTO admin_note_templates (name, message, type, is_active)
+SELECT 'Other (tfh-local)', 'Local placeholder note template seeded by tfh-local (not from any real environment).', 'DEFAULT', true
+WHERE NOT EXISTS (SELECT 1 FROM admin_note_templates WHERE name = 'Other (tfh-local)');
+SQL
 
 gw() { dc exec -T tf-apigateway ./main "$@" 2>&1; }
 uuid_of() { grep -oE '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}' | head -n1; }
