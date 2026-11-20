@@ -70,6 +70,15 @@ Gate tag: `@gate` (`npm run test:gate` = `--grep @gate --grep-invert @quarantine
 | Kratos public / admin (live, loopback) | 14433 / 14434 |
 
 ## Known gaps (TODO)
+- Funnels (nextjs-aff-landing-pages) runs a LOCAL-ONLY merge branch `tfh-local/local-run` in `apps/` until these
+  Bitbucket branches merge to develop (PRs not opened by tfh-local; create-PR links in the M7 progress log):
+  - `tfh-local/cookie-domain-port`: cookie Domain built from the Host header kept the port (`Domain=.localhost:13005`),
+    so browsers dropped the middleware cookies (Rakuten `tfh_mw_ran*`, visitor id, pixels). Fix strips the port and
+    omits Domain for localhost/IPs. tfh-automation's Rakuten middleware test needs it locally.
+  - `tfh-local/image-onerror-loop`: image onError fallback looped forever in WebKit when an image failed.
+  Rebuild after switching: `git -C apps/nextjs-aff-landing-pages checkout tfh-local/local-run` then
+  `docker compose up -d --build aff-landing-pages`. When both are on develop, `make refresh` puts funnels back on
+  `tfh-local/develop`.
 - Klaviyo: tf-api reads `KLAVIYO_API_BASE_URL` only on branch `tfh-local/klaviyo-base-url` (PR to develop, not merged).
   compose sets it to the recorder (`GET http://localhost:18090/__calls`) with placeholder key/list values. On a tf-api
   without that change, Klaviyo calls go to the proxy and are denied.
