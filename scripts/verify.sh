@@ -34,6 +34,12 @@ SHAS="$(repo_shas_json)"
 # 2 workers (was 4): with LOCAL_APP_MODE=dev the portal/funnels run `next dev` (parallel route compiles = OOM
 # restarts). Routes are warmed serially first (scripts/warmup.sh; in prod mode it also waits for the builds).
 WORKERS="${VERIFY_WORKERS:-2}"; MAXS="${VERIFY_MAX_SECONDS:-1500}"
+# Spreedly (M9): TFH_SPREEDLY=real tells the suite the TF payment form (Spreedly iframes) can render, i.e.
+# EXTERNALS=real AND the sandbox key NEXT_PUBLIC_SPREEDLY_ENVIRONMENT_KEY_TF is configured. Otherwise offline.
+TFH_SPREEDLY_MODE=offline
+if [ "$(printf '%s' "${EXTERNALS:-offline}" | tr '[:upper:]' '[:lower:]')" = real ] && [ -n "${NEXT_PUBLIC_SPREEDLY_ENVIRONMENT_KEY_TF:-}" ]; then
+  TFH_SPREEDLY_MODE=real
+fi
 run_suite() { # label grep [grep-invert]
   local label="$1" grep="$2" inv="${3:-}" args
   args=(playwright test --grep "$grep" --retries 0 --workers "$WORKERS" --reporter=list,html,json --output "$RUN/$label/test-results")
@@ -44,6 +50,7 @@ run_suite() { # label grep [grep-invert]
       ADMIN_USER="${LOCAL_ADMIN_EMAIL:-}" ADMIN_PASSWORD="${LOCAL_ADMIN_PASSWORD:-}" \
       TF_API_BASIC_AUTH="${TF_API_BASIC_AUTH_USERNAME:-}:${TF_API_BASIC_AUTH_PASSWORD:-}" \
       TFH_EXTERNALS="$(printf '%s' "${EXTERNALS:-offline}" | tr '[:upper:]' '[:lower:]')" \
+      TFH_SPREEDLY="$TFH_SPREEDLY_MODE" \
       BUILDER_PUBLIC_API_KEY="${LOCAL_BUILDER_PUBLIC_KEY_FUNNEL:-}" && \
     for v in TEST_CUSTOMER_FIRST_NAME TEST_CUSTOMER_LAST_NAME TEST_CUSTOMER_EMAIL TEST_CUSTOMER_PHONE TEST_CUSTOMER_STREET \
              TEST_CUSTOMER_CITY TEST_CUSTOMER_STATE TEST_CUSTOMER_ZIP TEST_CUSTOMER_COUNTRY \

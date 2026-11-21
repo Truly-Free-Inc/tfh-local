@@ -32,3 +32,6 @@ set -e
 docker exec "$CID" rm -rf "$TMP"
 [ $rc -eq 0 ] || die "catalog load failed (rc=$rc); the whole load was rolled back"
 grn "catalog loaded into local $DB (mode=$MODE). feature_flags = approved snapshot."
+# The export carries PROD TF product ids; with EXTERNALS=real point them at TF DEV ids (read-only TF lookup, local DB
+# writes only). Not fatal: on failure the catalog stays loaded and TF tax estimates fall back as before.
+"$ROOT/scripts/map-tf-product-ids.sh" || ylw "map-tf-products failed; run 'make map-tf-products' once TF dev is reachable"

@@ -5,7 +5,8 @@
 #   incl. the prod TF API, Klaviyo, Mailgun, Avalara, tfhcore and the builder.io root;
 #   ALLOW (200) only for the approved read-only hosts in proxy/readonly-allowlist.txt (cdn.builder.io) and,
 #   with EXTERNALS=real only, the reviewed dev/stage hosts (Michael 2026-11-20): limelightcrm.com, the Sticky API host
-#   <STICKY_APP_KEY>.<STICKY_DOMAIN> (shown masked, never by name) and api.dev.trulyfree.com.
+#   <STICKY_APP_KEY>.<STICKY_DOMAIN> (shown masked, never by name) and api.dev.trulyfree.com; plus (M9, Michael
+#   2026-11-20 7:02 PM ET) core.spreedly.com (every other spreedly.com host stays DENIED).
 #   With EXTERNALS=offline those Sticky/TF hosts must be DENIED too.
 # HTTPS clients use CONNECT host:443, so that is what is probed (plus one plain-HTTP GET).
 # No host is ever ADDED anywhere by this script; it only asks the proxy. Exit 1 on any unexpected answer.
@@ -23,6 +24,7 @@ DENY_PROBES=(
   "CONNECT avalara.com" "CONNECT rest.avatax.com"
   "CONNECT tfhcore.trulyfreehome.com"
   "CONNECT builder.io" "CONNECT www.builder.io" "CONNECT api.builder.io"
+  "CONNECT spreedly.com" "CONNECT www.spreedly.com" "CONNECT docs.spreedly.com"
 )
 ALLOW_PROBES=()
 RO="$ROOT/proxy/readonly-allowlist.txt"
@@ -32,7 +34,7 @@ STICKY_API_HOST=""
 if [ -n "${STICKY_APP_KEY:-}" ] && [ -n "${STICKY_DOMAIN:-}" ]; then
   STICKY_API_HOST="$(printf '%s' "$STICKY_APP_KEY" | tr '[:upper:]' '[:lower:]').$(host_of "$STICKY_DOMAIN")"
 fi
-EXT_PROBES=("CONNECT limelightcrm.com" "CONNECT api.dev.trulyfree.com")
+EXT_PROBES=("CONNECT limelightcrm.com" "CONNECT api.dev.trulyfree.com" "CONNECT core.spreedly.com")
 [ -n "$STICKY_API_HOST" ] && EXT_PROBES+=("CONNECT $STICKY_API_HOST")
 if [ "$EXTERNALS" = "real" ]; then
   [ -n "$STICKY_API_HOST" ] || { red "egress: EXTERNALS=real but STICKY_APP_KEY/STICKY_DOMAIN unset"; exit 1; }

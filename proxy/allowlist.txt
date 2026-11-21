@@ -10,3 +10,6 @@
 # the prod TF API host or any other production host. Approved by Michael 2026-11-20.
 ^limelightcrm\.com$
 ^api\.dev\.trulyfree\.com$
+# Spreedly core API (Michael 2026-11-20 7:02 PM ET: add the Spreedly key develop/stage use). Same host for sandbox and
+# prod; tfh-local only ever sets the SANDBOX environment key (NEXT_PUBLIC_SPREEDLY_ENVIRONMENT_KEY_TF). No access secret.
+^core\.spreedly\.com$

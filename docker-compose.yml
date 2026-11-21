@@ -436,6 +436,9 @@ services:
       NEXT_PUBLIC_TF_API_DOMAIN: http://localhost:${TF_API_HOST_PORT:-13000}
       NEXT_PUBLIC_API_BASE_URL: http://localhost:${TF_API_HOST_PORT:-13000}
       NEXT_PUBLIC_TF_CHECKOUT_DOMAIN: http://localhost:${TF_API_HOST_PORT:-13000}
+      # Spreedly SANDBOX environment key (public, client-side; build-time for Next). Empty = Spreedly off. preflight refuses
+      # it unless EXTERNALS=real; the browser iframe and server fetch reach only core.spreedly.com. Apple/Google Pay stay off.
+      NEXT_PUBLIC_SPREEDLY_ENVIRONMENT_KEY_TF: ${NEXT_PUBLIC_SPREEDLY_ENVIRONMENT_KEY_TF:-}
       NEXT_PUBLIC_NEXT_GEN_DOMAIN: http://localhost:${MEMBERPORTAL_HOST_PORT:-13001}
       NEXT_PUBLIC_MEMBER_PORTAL_BASE_URL: http://localhost:${MEMBERPORTAL_HOST_PORT:-13001}
       MEMBER_PORTAL_BASE_URL: http://localhost:${MEMBERPORTAL_HOST_PORT:-13001}
@@ -537,6 +540,9 @@ services:
       NEXT_PUBLIC_SELECTED_SUBSCRIPTION_COOKIE_NAME: local_tfh_selected_subscription_uuid
       NEXT_PUBLIC_PLP_BOX_PROMPT_DISMISSED_KEY: local_tfh_plp_box_prompt_dismissed
       # Non-secret UI/config values as in the repo's .env.develop/.env.stage.
+      # Spreedly SANDBOX environment key (public, client-side; build-time for Next). Empty = Spreedly off. preflight refuses
+      # it unless EXTERNALS=real; the browser iframe and server fetch reach only core.spreedly.com. Apple/Google Pay stay off.
+      NEXT_PUBLIC_SPREEDLY_ENVIRONMENT_KEY_TF: ${NEXT_PUBLIC_SPREEDLY_ENVIRONMENT_KEY_TF:-}
       NEXT_PUBLIC_STOREFRONT_CAMPAIGN_ID: "162"
       NEXT_PUBLIC_CART_BUILDER_ENABLED: "true"
       NEXT_PUBLIC_PDP_BUILDER_ENABLED: "true"
