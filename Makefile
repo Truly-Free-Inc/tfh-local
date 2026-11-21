@@ -3,7 +3,7 @@ SHELL := /bin/bash
 .DEFAULT_GOAL := help
 export KEY BRANCH CONFIRM LOCAL_SRC REFRESH VECTOR
 
-.PHONY: help bootstrap refresh ticket up down health logs verify status pr reset preflight check-secrets config test seed-auth prove-login prove-admin seed-catalog seed-sitemap
+.PHONY: help bootstrap refresh ticket up down health logs verify status pr reset preflight check-secrets config test seed-auth prove-login prove-admin seed-catalog seed-sitemap map-tf-products
 
 help: ## list targets
 	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  %-14s %s\n", $$1, $$2}'
@@ -37,6 +37,9 @@ seed-auth: ## (re)seed local auth users: portal test customer (tf-api DB + Krato
 
 seed-catalog: ## load the gitignored catalog export (.state/catalog-export) into LOCAL tf-api Postgres (CATALOG_MODE=replace|upsert)
 	@scripts/seed-catalog.sh
+
+map-tf-products: ## EXTERNALS=real: map local tf_products to TF DEV product ids by SKU (read-only TF lookup; also run by seed-catalog)
+	@scripts/map-tf-product-ids.sh
 
 seed-sitemap: ## generate sitemap.xml from local sitemap_entries via local tf-api -> local MinIO (served by funnels /sitemap.xml)
 	@scripts/seed-sitemap.sh

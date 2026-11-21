@@ -16,6 +16,10 @@
 # TF (trulyfree.com): every host, incl. the prod TF Composition API. EXTERNALS=real reaches only the TF DEV API host,
 # via its exact entry in safety/reviewed-exceptions.txt (Michael 2026-11-20).
 ^(.*\.)?trulyfree\.com$
+# Spreedly (payment vault): one host serves sandbox and prod environments (the environment KEY decides). EXTERNALS=real
+# reaches exactly core.spreedly.com via safety/reviewed-exceptions.txt with the develop/stage SANDBOX key only (Michael
+# 2026-11-20 7:02 PM ET); every other spreedly.com host stays denied.
+^(.*\.)?spreedly\.com$
 # Never-allowed services (local stack must not talk to them at all)
 ^(.*\.)?klaviyo\.com$
 ^(.*\.)?mailgun\.(net|com|org)$

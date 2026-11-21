@@ -1,4 +1,4 @@
-# Non-prod hosts allowed for STICKY_DOMAIN and TF_COMPOSITION_API_BASE_URL (host part). POSIX ERE, one per line.
+# Non-prod hosts allowed for STICKY_DOMAIN, TF_COMPOSITION_API_BASE_URL (host part) and proxy/allowlist.txt. POSIX ERE, one per line.
 # preflight.sh REFUSES EXTERNALS=real unless both hosts match a line here AND are not on safety/prod-denylist.txt
 # (a host on the deny list passes only if it is listed EXACTLY in safety/reviewed-exceptions.txt).
 # Approved by Michael 2026-11-20 (5:37 PM ET): use the Sticky and TF endpoints develop/stage use; test orders only.
@@ -7,3 +7,6 @@
 ^limelightcrm\.com$
 # TF Composition API: the TF DEV system that develop and stage use. The prod TF API host stays denied.
 ^api\.dev\.trulyfree\.com$
+# Spreedly core API (Michael 2026-11-20 7:02 PM ET: add the Spreedly key develop/stage use). Same host for sandbox and
+# prod; tfh-local only ever sets the SANDBOX environment key (NEXT_PUBLIC_SPREEDLY_ENVIRONMENT_KEY_TF). No access secret.
+^core\.spreedly\.com$

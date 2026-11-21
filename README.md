@@ -59,6 +59,12 @@ What is offline, and why:
   hosts are exactly `limelightcrm.com`, the app-key Sticky API host derived by preflight, and `api.dev.trulyfree.com`
   (see `safety/reviewed-exceptions.txt`). Credentials come from the team's dev/stage set and are never committed. With
   `EXTERNALS=offline`/empty, checkout, order create, cancel, ship-now, swap and login order-sync fail locally **by design**.
+- **Spreedly: the develop/stage SANDBOX key with `EXTERNALS=real`** (M9, Michael 2026-11-20). Set
+  `NEXT_PUBLIC_SPREEDLY_ENVIRONMENT_KEY_TF` and the TF payment form (Spreedly iframes) renders. Only `core.spreedly.com`
+  is reachable, and no Spreedly access secret is ever set. Apple Pay and Google Pay stay off.
+- **TF product ids:** `make map-tf-products` points the local catalog at TF **dev** product ids. It reads TF dev by
+  SKU (read-only) and writes only the local DB; `make seed-catalog` also runs it. With the TF dev ids,
+  `/v1/tax/estimate` gets a real answer.
 - **tfhcore, Avalara, Syteline/Infor: never configured.** Portal flows still on tfhcore (addresses, header search,
   email change, old cancel flow, token refresh) fail.
 - **Klaviyo, S3, mail: local fakes** (recorder, MinIO, Mailpit). tf-api's Mailgun mail is not sent.

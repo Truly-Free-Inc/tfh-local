@@ -81,6 +81,8 @@ if [ "$EXTERNALS" = "offline" ]; then
   while IFS='=' read -r k v; do
     case "$k" in
       STICKY_*|TF_COMPOSITION_*) offline_safe "$v" || bad "$k is set to a real value (in .env or your shell). EXTERNALS=offline requires it empty or a *.invalid placeholder." ;;
+      # Spreedly (M9): the sandbox environment key only with EXTERNALS=real (the browser would otherwise reach Spreedly).
+      *SPREEDLY_ENVIRONMENT_KEY*) [ -z "$v" ] || bad "$k is set while EXTERNALS=offline. Spreedly is reachable only with EXTERNALS=real; empty it." ;;
     esac
   done < <(env; printf '%s\n' "$CALLER_ENV")
   # 5-offline. The GENERATED proxy filter (below) is written EMPTY: the proxy denies every Sticky/TF host.
@@ -168,6 +170,9 @@ if command -v docker >/dev/null 2>&1; then
   if [ -n "$cfg" ]; then
     printf '%s' "$cfg" | grep -Eq '(SYTE_?LINE|SYTELINE|INFOR_|TFH_?CORE|TFHCORE|AVALARA)[A-Z_]*:' \
       && bad "docker compose config contains a forbidden variable (Syteline/Infor/tfhcore/Avalara)"
+    # Spreedly: only the public SANDBOX environment key is ever configured; never an access secret / gateway token.
+    printf '%s' "$cfg" | grep -Eq 'SPREEDLY_(ACCESS_SECRET|GATEWAY_TOKEN|SIGNING_SECRET)[A-Z_]*: *[^ ]' \
+      && bad "docker compose config carries a Spreedly access secret / gateway token (only the sandbox environment key is allowed)"
     printf '%s' "$cfg" | grep -Eq '(BUILDER[A-Z_]*(PRIVATE|SECRET|WRITE|ADMIN)[A-Z_]*: *[^ ]|: *"?bpk-)' \
       && bad "docker compose config carries a Builder.io private key (variable name or bpk- value)"
     if [ "$EXTERNALS" = "offline" ]; then
@@ -177,6 +182,8 @@ if command -v docker >/dev/null 2>&1; then
         v="$(printf '%s' "$line" | sed -E 's/^[[:space:]]*[A-Z0-9_]+:[[:space:]]*//; s/^"//; s/"$//')"
         offline_safe "$v" || bad "docker compose config sets $k to a real value while EXTERNALS=offline"
       done < <(printf '%s\n' "$cfg" | grep -E '^[[:space:]]+(STICKY_|TF_COMPOSITION_)[A-Z0-9_]*:' || true)
+      printf '%s\n' "$cfg" | grep -Eq '^[[:space:]]+[A-Z0-9_]*SPREEDLY_ENVIRONMENT_KEY[A-Z0-9_]*: *"?[^" ]' \
+        && bad "docker compose config sets a Spreedly environment key while EXTERNALS=offline"
     fi
     printf '%s' "$cfg" | grep -E '^\s+DB_HOST(_RO)?:' | grep -vEq 'DB_HOST(_RO)?: postgres$' \
       && bad "docker compose config has a DB_HOST that is not the local 'postgres' container"
