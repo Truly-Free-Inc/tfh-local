@@ -27,6 +27,8 @@ make up                               # preflight + build + start + health (firs
 make health                           # every service + "proxy denies a non-allow-listed host"
 make verify                           # core gate (@gate, not @quarantine) on the host vs the local stack, 4 workers,
                                       # no retries, 25 min cap -> .state/runs/gate-<ts>/ (make verify KEY=... adds @KEY)
+make suite PROJECTS="api-local"       # FULL suite (every test, not only @gate; quarantine excluded), one chunk of local
+                                      # projects at a time (GREP=regex narrows), 2 workers, no retries, no trace/video
 make down                             # stop (volumes kept; `make reset CONFIRM=1` wipes local volumes)
 ```
 Suite: `apps/tfh-automation` must be on a branch with `TARGET_ENV=local` (tfh-automation PR #4, `feat/local-env`)
