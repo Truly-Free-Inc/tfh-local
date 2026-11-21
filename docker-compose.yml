@@ -118,7 +118,11 @@ services:
     environment:
       <<: *proxy-env
       PORT: "3000"
-      APP_ENV: ${APP_ENV:-local}
+      # tf-api reads environment-scoped feature flags with GetFeatureFlagByName(name, APP_ENV). 'local' can never
+      # match (validate_environment_trigger rejects it), so tf-api runs as 'development' (what develop runs) and
+      # `make map-flag-env` (run by seed-catalog) copies the approved production snapshot rows to 'development'
+      # (TFHFUNNEL-8090). Preflight allows only development|local here.
+      APP_ENV: ${TF_API_APP_ENV:-development}
       # HTTP Basic auth on every route except /ping, /health, Zaymo (src/middleware/basic_auth.go), like deployed envs.
       # Generated local creds; the Next.js apps send them server-side. BASIC_AUTH_ENABLED=false only to debug.
       BASIC_AUTH_ENABLED: ${TF_API_BASIC_AUTH_ENABLED:-true}
@@ -450,6 +454,9 @@ services:
       # Unset -> placeholder: Builder SDK throws without a key; with it, fetches fail -> 404 component.
       NEXT_PUBLIC_BUILDER_API_KEY: ${LOCAL_BUILDER_PUBLIC_KEY_PORTAL:-tfh-local-offline}
       NEXT_PUBLIC_FUNNEL_BUILDER_API_KEY: ${LOCAL_BUILDER_PUBLIC_KEY_FUNNEL:-tfh-local-offline}
+      # Same as develop/stage/prod (memberportal .env.*): the cart drawer renders through the Builder member-cart-drawer
+      # model (read-only Builder GET) inside an out-of-flow wrapper, like stage. Parity only (M10); not a secret.
+      NEXT_PUBLIC_CART_BUILDER_ENABLED: "true"
       KLAVIYO_BASE_URL: http://klaviyo-recorder:8090
       NEXT_PUBLIC_KLAVIYO_BASE_URL: http://localhost:${KLAVIYO_RECORDER_HOST_PORT:-18090}
       NEXT_PUBLIC_SENTRY_ENABLED: "false"

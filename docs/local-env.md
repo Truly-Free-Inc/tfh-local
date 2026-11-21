@@ -103,7 +103,7 @@ Gate tag: `@gate` (`npm run test:gate` = `--grep @gate --grep-invert @quarantine
   (suite: map these to the portal test-customer variables for the `local` env).
 - Login path: portal `/portal/api/v1/auth/login` -> tf-api (bcrypt in `customer_auth`) -> session in the LOCAL Redis
   (`SESSION_WRITE_NEXTGEN_REDIS_ENABLED=true`; `REDIS_HOST_TFH_CORE` is never set).
-- Login-time Sticky calls fail in milliseconds when `EXTERNALS=offline` (they reach the shared Sticky with `EXTERNALS=real`). `login_order_sync_enabled` has no flag row locally, so sync is skipped.
+- Login-time Sticky calls fail in milliseconds when `EXTERNALS=offline` (they reach the shared Sticky with `EXTERNALS=real`). Since M10 tf-api reads the prod flag values (see "Feature flags" below), so `login_order_sync_enabled` is on and login runs the order sync like prod.
 - `next dev` hydrates late: fill the login form after `load` (see `scripts/prove-portal-login.cjs`). First hit of each
   route compiles it (~20-30 s).
 - Offline failures (expected; Sticky/TF are real only with `EXTERNALS=real`): the dashboard sidebar
@@ -136,9 +136,8 @@ offline (`lib/local-offline.ts`, reason "requires external X (offline in tfh-loc
 test orders only), and `TFH_SPREEDLY=real` when EXTERNALS=real AND the Spreedly sandbox key
 `NEXT_PUBLIC_SPREEDLY_ENVIRONMENT_KEY_TF` is set (M9, Michael 2026-11-20 7:02 PM ET): then the TF payment form (Spreedly
 iframes from `core.spreedly.com`) renders and the suite runs its Spreedly tests (funnel/checkout-totals TF cases,
-cross-browser ios-forms / offer-sweep / webkit checkout / secure-input). funnel/offer-order reaches Place Order but is
-quarantined (Q9, TFHFUNNEL-8090): local tf-api rejects TF-processor orders with 400 TF_ORDER_TYPE_DISABLED because the
-flag `tf_order_type_enabled` has no `local` row (flags are never changed here). storefront/checkout-outcomes now skips
+cross-browser ios-forms / offer-sweep / webkit checkout / secure-input). funnel/offer-order places its TF-dev "test test"
+order (M10; was quarantined as Q9, TFHFUNNEL-8090, until tf-api could read `tf_order_type_enabled`, see "Feature flags"). storefront/checkout-outcomes now skips
 by the spec's own rule (it never types a card into Spreedly fields). The key is a Next build-time value: changing it
 recreates funnels + memberportal on `make up`, which rebuilds them. Avalara, Cloudflare, image CDN, Braintree, Apple/Google
 Pay and Google stay offline/skipped either way:
@@ -191,3 +190,18 @@ Known local failures (not offline externals):
 - storefront/cart-checkout-totals: checkout is self-consistent (subtotal $19.95, savings $2.00 = the 10% volume tier,
   total $17.95), but the cart drawer's Subtotal shows the pre-discount $19.95 and the test expects it to equal the
   payable $17.95. Not confirmed whether stage's drawer shows the discounted figure (no remote calls from here).
+
+## Feature flags: tf-api runs as `development` (M10, Nov 20 2026, TFHFUNNEL-8090)
+- tf-api reads environment-scoped flags with `GetFeatureFlagByName(name, APP_ENV)`. The snapshot only has
+  `production` rows and the DB trigger `validate_environment_trigger` rejects `local`, so with `APP_ENV=local` every
+  such lookup missed and the flag read as off (e.g. `tf_order_type_enabled` -> 400 `TF_ORDER_TYPE_DISABLED`).
+- Now: compose runs tf-api with `APP_ENV=${TF_API_APP_ENV:-development}` (what develop runs; preflight allows only
+  `development|local`), and `make map-flag-env` (run by `make seed-catalog`) copies the `production` rows to
+  `development` (trigger-valid; derived from the snapshot only; self-checked identical; idempotent). Result: local
+  tf-api sees the prod flag values. TF order numbers are `TFD-<id>` (tf-api's development prefix).
+- Side effects of prod flag values locally: address-validation providers (Google/USPS) are on but their hosts are
+  refused by the egress proxy; crons stay off (`-enable-cron` is never set); Klaviyo goes to the local recorder.
+- `.env` APP_ENV (frontends' `NEXT_PUBLIC_FEATURE_FLAG_ENVIRONMENT`, admin flag page) stays `local`; the apps' own
+  name-only flag reads (`/feature-flags/name/...`) already saw prod values.
+- Memberportal `NEXT_PUBLIC_CART_BUILDER_ENABLED=true` (as in develop/stage/prod `.env.*`): the cart drawer renders through
+  Builder's `member-cart-drawer` model, like stage.
