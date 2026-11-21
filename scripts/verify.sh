@@ -6,7 +6,12 @@
 # -> scripts/check-test-orders.sh -> .state/runs/<KEY>-<ts>/summary.md + reports. Exit non-zero if red.
 # The suite's test-order guard (lib/test-order-guard.ts) is used as-is. Never edit or widen it.
 . "$(dirname "$0")/lib.sh"
-if [ -n "${KEY:-}" ]; then require_key; LABEL="$KEY"; else LABEL=gate; fi
+# SCOPE=full (make suite): the FULL suite instead of the @gate core, optionally one chunk of projects
+# (PROJECTS="funnel-local api-local"); quarantined tests stay excluded. Bulk runs: TFR_TRACE/TFR_VIDEO default off.
+SCOPE="${SCOPE:-gate}"
+case "$SCOPE" in gate|full) ;; *) die "SCOPE must be gate or full (got '$SCOPE')";; esac
+if [ "$SCOPE" = full ]; then LABEL="full-$(printf '%s' "${CHUNK:-${PROJECTS:-all}}" | tr -c 'A-Za-z0-9-' '_' | cut -c1-60)"
+elif [ -n "${KEY:-}" ]; then require_key; LABEL="$KEY"; else LABEL=gate; fi
 load_env
 SUITE="$APPS/tfh-automation"
 [ -d "$SUITE" ] || die "apps/tfh-automation missing. Run: make bootstrap"
@@ -36,6 +41,8 @@ SHAS="$(repo_shas_json)"
 WORKERS="${VERIFY_WORKERS:-2}"; MAXS="${VERIFY_MAX_SECONDS:-1500}"
 # Spreedly (M9): TFH_SPREEDLY=real tells the suite the TF payment form (Spreedly iframes) can render, i.e.
 # EXTERNALS=real AND the sandbox key NEXT_PUBLIC_SPREEDLY_ENVIRONMENT_KEY_TF is configured. Otherwise offline.
+TRACE_MODE="${TFR_TRACE:-}"; [ "$SCOPE" = full ] && TRACE_MODE="${TFR_TRACE:-off}"
+[ "$SCOPE" = full ] && MAXS="${VERIFY_MAX_SECONDS:-3600}"
 TFH_SPREEDLY_MODE=offline
 if [ "$(printf '%s' "${EXTERNALS:-offline}" | tr '[:upper:]' '[:lower:]')" = real ] && [ -n "${NEXT_PUBLIC_SPREEDLY_ENVIRONMENT_KEY_TF:-}" ]; then
   TFH_SPREEDLY_MODE=real
@@ -44,6 +51,9 @@ run_suite() { # label grep [grep-invert]
   local label="$1" grep="$2" inv="${3:-}" args
   args=(playwright test --grep "$grep" --retries 0 --workers "$WORKERS" --reporter=list,html,json --output "$RUN/$label/test-results")
   [ -n "$inv" ] && args+=(--grep-invert "$inv")
+  local p; for p in ${PROJECTS:-}; do
+    case "$p" in *-local|unit) args+=(--project "$p");; *) die "PROJECTS: '$p' is not a local project";; esac
+  done
   # Credentials are exported (shell builtin), not passed as `env NAME=value` argv (visible in `ps`).
   ( cd "$SUITE" && export MEMBER_PORTAL_USER="${TEST_CUSTOMER_PORTAL_EMAIL:-}" \
       MEMBER_PORTAL_PASSWORD="${TEST_CUSTOMER_PORTAL_PASSWORD:-}" \
@@ -60,7 +70,7 @@ run_suite() { # label grep [grep-invert]
       # The suite refuses any other name (fixtures/test-customer.ts) and every order goes through lib/test-order-guard.ts.
       if [ -n "${!v:-}" ]; then export "$v=${!v}"; fi
     done; \
-    env TARGET_ENV=local TZ=UTC TFR_RETRIES=0 \
+    env TARGET_ENV=local TZ=UTC TFR_RETRIES=0 TFR_TRACE="$TRACE_MODE" TFR_VIDEO="$TRACE_MODE" \
       PLAYWRIGHT_HTML_OUTPUT_DIR="$RUN/$label/html" PLAYWRIGHT_HTML_REPORT="$RUN/$label/html" PLAYWRIGHT_HTML_OPEN=never \
       PLAYWRIGHT_JSON_OUTPUT_NAME="$RUN/$label/results.json" \
       perl -e 'alarm shift; exec @ARGV' "$MAXS" npx "${args[@]}" ) > "$RUN/$label.log" 2>&1
@@ -68,8 +78,11 @@ run_suite() { # label grep [grep-invert]
 
 mkdir -p "$RUN/ticket" "$RUN/gate"
 set +e
-if [ -n "${KEY:-}" ]; then run_suite ticket "$(key_grep "$KEY")"; T=$?; else T=0; fi
-run_suite gate   "@gate" "@quarantine"; G=$?
+if [ "$SCOPE" = full ]; then T=0; run_suite gate "${GREP:-.}" "@quarantine"; G=$?
+else
+  if [ -n "${KEY:-}" ]; then run_suite ticket "$(key_grep "$KEY")"; T=$?; else T=0; fi
+  run_suite gate   "@gate" "@quarantine"; G=$?
+fi
 "$ROOT/scripts/check-test-orders.sh" "$START" > "$RUN/test-orders.log" 2>&1; O=$?
 set -e
 
@@ -81,7 +94,7 @@ cat > "$RUN/summary.md" <<MD
 | step | result | log |
 |---|---|---|
 | ticket tests (@${KEY:-none}) | $( [ -n "${KEY:-}" ] && word $T || echo SKIPPED) | ticket.log, ticket/html |
-| core gate (@gate, not @quarantine) | $(word $G) | gate.log, gate/html |
+| $( [ "$SCOPE" = full ] && echo "full suite (${PROJECTS:-all projects}, not @quarantine)" || echo "core gate (@gate, not @quarantine)") | $(word $G) | gate.log, gate/html |
 | test orders only (local DB since $START) | $(word $O) | test-orders.log |
 
 Repos (branch @ sha): \`$SHAS\`

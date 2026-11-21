@@ -56,6 +56,9 @@ logs: ## follow logs (S=service to filter)
 verify: ## [KEY=...] preflight, health, (ticket tests) + core gate on host (TARGET_ENV=local), test-order check
 	@scripts/verify.sh
 
+suite: ## [PROJECTS="funnel-local api-local"] [GREP=regex] FULL suite (not just @gate; not @quarantine) like verify; no trace/video
+	@SCOPE=full scripts/verify.sh
+
 status: ## ticket, branches, dirty flags, last verify, containers
 	@scripts/status.sh
 

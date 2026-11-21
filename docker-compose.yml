@@ -21,8 +21,8 @@ x-proxy-env: &proxy-env
   HTTPS_PROXY: http://proxy:8888
   http_proxy: http://proxy:8888
   https_proxy: http://proxy:8888
-  NO_PROXY: localhost,127.0.0.1,postgres,redis,minio,mailpit,klaviyo-recorder,tf-api,tf-apigateway,kratos,keto,memberportal,admin-panel,aff-landing-pages,vector-search
-  no_proxy: localhost,127.0.0.1,postgres,redis,minio,mailpit,klaviyo-recorder,tf-api,tf-apigateway,kratos,keto,memberportal,admin-panel,aff-landing-pages,vector-search
+  NO_PROXY: localhost,127.0.0.1,postgres,redis,minio,mailpit,klaviyo-recorder,otel-sink,tf-api,tf-apigateway,kratos,keto,memberportal,admin-panel,aff-landing-pages,vector-search
+  no_proxy: localhost,127.0.0.1,postgres,redis,minio,mailpit,klaviyo-recorder,otel-sink,tf-api,tf-apigateway,kratos,keto,memberportal,admin-panel,aff-landing-pages,vector-search
 
 x-stub: &stub
   image: alpine:3.20
@@ -301,6 +301,13 @@ services:
     volumes: [klaviyo-data:/data]
     networks: [internal]
 
+  # Local OTLP/HTTP sink (M11): answers the member portal's browser trace exports (POST /v1/traces) with 200 and drops
+  # them. Internal network only, no host port, no egress, nothing stored.
+  otel-sink:
+    build: ./otel-sink
+    restart: unless-stopped
+    networks: [internal]
+
   # ---------------------------------------------------------------- stubs (TODO, profile `stub`)
   # ---------------------------------------------------------------- auth gateway (M2)
   # Mirrors apps/tf-apigateway/docker-compose.yml (Postgres 15, Kratos v1.3.1, Keto v0.12.0-alpha.0, api).
@@ -462,11 +469,14 @@ services:
       NEXT_PUBLIC_SENTRY_ENABLED: "false"
       NEXT_PUBLIC_GA4_ENABLED: "false"
       NEXT_PUBLIC_SURVEYS_ENABLED: "false"
-      OTEL_EXPORTER_OTLP_ENDPOINT: http://127.0.0.1:4318
+      # Browser trace exports (/api/otel/traces) go to the local sink, which answers 200 and drops them (M11: the refused
+      # loopback port made every export a 500, which the suite's portal 5xx crawl caught).
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-sink:4318
       # NEVER set: NEXT_PUBLIC_TRULY_FREE_CORE_API_URL, NEXT_PUBLIC_TFH_SESSION_API_URL, TFH_SESSION_API_URL_INTERNAL,
       # TFH_PYTHON_API_URL, TRULY_FREE_CORE_API_KEY (tfhcore OUT); NEXT_PUBLIC_TFH_LARAVEL_API_DOMAIN (legacy OUT).
     depends_on:
       tf-api: { condition: service_started }
+      otel-sink: { condition: service_started }
     networks: [internal]
 
   # ---------------------------------------------------------------- admin panel + funnels (M3)
