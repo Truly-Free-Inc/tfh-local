@@ -163,6 +163,12 @@ fi
 case "$(printf '%s' "${APP_ENV:-local}" | tr '[:upper:]' '[:lower:]')" in
   prod|production|live|main) bad "APP_ENV='${APP_ENV}' looks like production." ;;
 esac
+# tf-api's own APP_ENV (TF_API_APP_ENV, default development): only development or local. Never stage/production
+# (those select stage/prod-only code paths such as the Syteline production key or stage campaign overrides).
+case "$(printf '%s' "${TF_API_APP_ENV:-development}" | tr '[:upper:]' '[:lower:]')" in
+  development|local) ;;
+  *) bad "TF_API_APP_ENV='${TF_API_APP_ENV}': only development or local are allowed for local tf-api." ;;
+esac
 
 # 6. Resolved compose config must not carry forbidden variables or point DB anywhere but local.
 if command -v docker >/dev/null 2>&1; then
