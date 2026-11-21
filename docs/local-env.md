@@ -133,13 +133,20 @@ Gate tag: `@gate` (`npm run test:gate` = `--grep @gate --grep-invert @quarantine
 suite. tfh-automation skips, only when `TARGET_ENV=local`, the tests whose answer comes from a service tfh-local keeps
 offline (`lib/local-offline.ts`, reason "requires external X (offline in tfh-local)"). `make verify` also exports
 `TFH_EXTERNALS=<real|offline>`; the suite runs its Sticky/TF tests only when `real` (approved by Michael 2026-11-20,
-test orders only). Spreedly, Avalara, Cloudflare, image CDN, Braintree and Google stay offline/skipped either way:
+test orders only), and `TFH_SPREEDLY=real` when EXTERNALS=real AND the Spreedly sandbox key
+`NEXT_PUBLIC_SPREEDLY_ENVIRONMENT_KEY_TF` is set (M9, Michael 2026-11-20 7:02 PM ET): then the TF payment form (Spreedly
+iframes from `core.spreedly.com`) renders and the suite runs its Spreedly tests (funnel/checkout-totals TF cases,
+cross-browser ios-forms / offer-sweep / webkit checkout / secure-input). funnel/offer-order reaches Place Order but is
+quarantined (Q9, TFHFUNNEL-8090): local tf-api rejects TF-processor orders with 400 TF_ORDER_TYPE_DISABLED because the
+flag `tf_order_type_enabled` has no `local` row (flags are never changed here). storefront/checkout-outcomes now skips
+by the spec's own rule (it never types a card into Spreedly fields). The key is a Next build-time value: changing it
+recreates funnels + memberportal on `make up`, which rebuilds them. Avalara, Cloudflare, image CDN, Braintree, Apple/Google
+Pay and Google stay offline/skipped either way:
 - api/tax: Avalara (tax). api/address-validation: Avalara/Google/USPS.
 - storefront/image-cdn: product images go through funnels' `/_next/image`, which fetches the prod image CDN server-side
   (container egress blocked by design).
-- funnel/checkout-totals (TF-processor check), funnel/offer-order (the gate offer is a TF-processor offer) and
-  cross-browser/ios-forms (card/CVV fields): the TF payment form is Spreedly iframes, which need the Spreedly TF key;
-  Spreedly stays offline, so TF offers fall back to the native card form and cannot be ordered.
+- funnel/page-health /checkout: loading checkout asks `/api/braintree/token` (Braintree, offline: 500).
+- Without the Spreedly key (or offline): the Spreedly tests above stay skipped (TF offers fall back to the native form).
 - platform/cf-geo: Cloudflare.
 In local runs the suite also blocks the live Klaviyo, Amazon ads, Northbeam and the prod track pixel in the browser:
 they hung the page `load` event and must not receive events from a local run.
@@ -156,8 +163,19 @@ create with 403 `RECAPTCHA_BLOCKED` before Sticky/TF is called.
 Still skipped by the specs themselves (not by tfh-local): coupons ("coupon checks run on stage") and admin writes
 ("admin writes are stage only", rebill offer create). Quarantined: member-portal/subscription-changes (Q8,
 TFHFUNNEL-8088: quantity 400, skip-once 422, shipping-address 500 on local tf-api; the rest of the flow passes).
-Known data mismatch: the local catalog is a prod export, so TF dev's `/v1/tax/estimate` answers "Product not found for
-tfProductId" for TF-mapped products (the checkout quote falls back; no test depends on it yet).
+TF product ids (M9, Michael 2026-11-20 "fix the product not found issue for local"): the catalog export is a prod
+export, so its `tf_products.tf_child_product_id` values are PROD TF ids, and TF dev answered `/v1/tax/estimate` with
+400 "Product not found for tfProductId". develop/stage get TF dev ids from their own tf-api product sync (cron
+`sync-products-to-tf`, which CREATES products on TF dev); tfh-local never runs crons or writes to TF. Instead
+`make map-tf-products` (also run at the end of `make seed-catalog`; EXTERNALS=real only) READS TF dev's product list
+(`GET /fast/api/v1/tfh-next-gen/products/`, same API tf-api uses, through the egress proxy from a Node app container)
+and matches local products by exact SKU = TF `sellerSku` (`seed/tf-products/match.py`: same UUID first, then status
+APPROVED > PENDING_APPROVAL > INACTIVE, never REJECTED, then exact name, then newest). It writes only the local
+`tf_products` table: matched rows SYNCED with the TF dev child id, the rest NOT_SYNCED with no TF id (tf-api then
+answers TF_PRODUCT_NOT_SYNCED and the quote falls back as before). Idempotent. The fetched list and mapping stay under
+the gitignored `.state/tf-products/`; nothing is committed. 2026-11-20: 590 of 679 local products mapped (140 of the
+194 active); 82 have no TF dev product with their SKU and 7 have no SKU (left on fallback). Re-run it after a TF dev
+catalog change or a `make seed-catalog`.
 
 Admin (Michael, 2026-11-20): the suite's READ-ONLY admin tests also run locally (tfh-automation PR #17), logged in as
 the seeded staff admin `LOCAL_ADMIN_EMAIL` = `local-admin@trulyfreehome.com` (`make verify` exports it as

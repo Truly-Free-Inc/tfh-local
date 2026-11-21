@@ -10,6 +10,11 @@ weakened to get a run green. If a rule blocks you, STOP and ask Michael.
 4. **Sticky and TF: the shared dev/stage endpoints, TEST ORDERS ONLY** (approved by Michael 2026-11-20: "We should be using the Sticky and TF endpoints we use in dev and stage. They are the same as prod and fine to call for test orders."). Covers only Sticky (`limelightcrm.com`) and the TF Composition API dev system (`api.dev.trulyfree.com`); the prod TF API host stays denied. Every order must be a test order: customer
    first+last name "test test" and test cards (tf-api `IsTestOrder`: names both "test", or Sticky test gateway
    ids 1, 3, 7, 8, 11, 12, 14).
+   **Spreedly (M9, Michael 2026-11-20 7:02 PM ET: "Find the spreedly key in Slack and add it")**: only the SANDBOX
+   environment key develop/stage use (`NEXT_PUBLIC_SPREEDLY_ENVIRONMENT_KEY_TF`, a public client-side value; never the
+   production key, never a Spreedly access secret / gateway token: preflight refuses those in compose). Only with
+   `EXTERNALS=real` (preflight refuses the key offline). Host: `core.spreedly.com` only (browser iframe + memberportal
+   server fetch); every other `spreedly.com` host stays denied. Apple Pay / Google Pay stay off (their vars unset).
 5. **Do not touch or widen tfh-automation `lib/test-order-guard.ts`.** No new allow-list entries, no bypass.
 6. **Never change feature flags.** Flags are seeded once on first DB init (`seed/`). No script, test or AI updates them.
 7. **No secrets in git.** No keys, tokens, passwords, card numbers or customer PII in this repo, logs or PR bodies.
@@ -23,7 +28,7 @@ weakened to get a run green. If a rule blocks you, STOP and ask Michael.
 | Mode | What preflight requires | Effect |
 |---|---|---|
 | `offline` (safe fallback; empty `EXTERNALS` = offline) | Every `STICKY_*` and `TF_COMPOSITION_*` value, in `.env` **and in your shell**, is empty or a placeholder under the reserved `.invalid` TLD (e.g. `sticky.offline.invalid`); the resolved compose config agrees; the generated proxy filter (`.state/egress/allowlist.txt`) is written **empty**. | Sticky/TF calls cannot leave the machine: tf-api gets no Sticky/TF config and the proxy denies every host. `proxy/allowlist.txt` and `safety/nonprod-hosts.txt` need not be empty. Checkout, order create, cancel and login order-sync results are **expected to fail locally**. |
-| `real` (**standard**, Michael 2026-11-20) | `STICKY_USERNAME`/`STICKY_PASSWORD`, `STICKY_APP_KEY` (one DNS label) and `TF_COMPOSITION_API_TOKEN` set; `STICKY_DOMAIN` a bare host; TF URL https; Sticky/TF hosts on `safety/nonprod-hosts.txt`; any prod deny-list match must be an exact literal on `safety/reviewed-exceptions.txt` (`limelightcrm.com`, `api.dev.trulyfree.com`); the derived Sticky API host (`<app key>.<STICKY_DOMAIN>`) must clear every deny pattern except those denying the reviewed `STICKY_DOMAIN` itself. | Sticky + TF dev reachable through the proxy, test orders only. Credentials come from the team's dev/stage set and are never committed. |
+| `real` (**standard**, Michael 2026-11-20) | `STICKY_USERNAME`/`STICKY_PASSWORD`, `STICKY_APP_KEY` (one DNS label) and `TF_COMPOSITION_API_TOKEN` set; `STICKY_DOMAIN` a bare host; TF URL https; Sticky/TF hosts on `safety/nonprod-hosts.txt`; any prod deny-list match must be an exact literal on `safety/reviewed-exceptions.txt` (`limelightcrm.com`, `api.dev.trulyfree.com`, `core.spreedly.com`); the optional Spreedly sandbox key `NEXT_PUBLIC_SPREEDLY_ENVIRONMENT_KEY_TF` is allowed (offline refuses it); the derived Sticky API host (`<app key>.<STICKY_DOMAIN>`) must clear every deny pattern except those denying the reviewed `STICKY_DOMAIN` itself. | Sticky + TF dev (+ Spreedly core API) reachable through the proxy, test orders only. Credentials come from the team's dev/stage set and are never committed. |
 
 All other checks (Syteline/Infor, tfhcore, Avalara, `DB_HOST`, `APP_ENV`, compose scan) run in both modes. In both modes the reviewed list files (`safety/nonprod-hosts.txt`, `safety/reviewed-exceptions.txt`, `safety/prod-denylist.txt`, `proxy/allowlist.txt`, `proxy/readonly-allowlist.txt`) must have no uncommitted changes.
 Never copy `STICKY_*` / `TF_COMPOSITION_*` values into `.env` while `EXTERNALS=offline`; preflight will refuse. The app key is never printed.
@@ -31,7 +36,7 @@ Never copy `STICKY_*` / `TF_COMPOSITION_*` values into `.env` while `EXTERNALS=o
 ## How the stack enforces them
 | Guard | Where | What it does |
 |---|---|---|
-| Preflight | `scripts/preflight.sh` (runs before `make up` and `make verify`) | `EXTERNALS=offline`: see above. `EXTERNALS=real`: refuses (exit 1) unless STICKY_DOMAIN and TF_COMPOSITION_API_BASE_URL hosts are set, match `safety/nonprod-hosts.txt` and match nothing in `safety/prod-denylist.txt` except the exact literals in `safety/reviewed-exceptions.txt`; no Syteline/Infor, tfhcore or Avalara variable is non-empty (in `.env` or your shell); DB host is the local `postgres` container; APP_ENV is not production; every `proxy/allowlist.txt` entry is non-prod. Preflight also GENERATES the effective proxy filter `.state/egress/allowlist.txt` (gitignored): empty when offline or on any refusal (fail closed), otherwise `proxy/allowlist.txt` plus the derived Sticky API host. Both modes: every pattern in the deny list, allow-lists and non-prod list must be `^...$` anchored with escaped dots (`tests/test-patterns.sh`). |
+| Preflight | `scripts/preflight.sh` (runs before `make up` and `make verify`) | `EXTERNALS=offline`: see above. `EXTERNALS=real`: refuses (exit 1) unless STICKY_DOMAIN and TF_COMPOSITION_API_BASE_URL hosts are set, match `safety/nonprod-hosts.txt` and match nothing in `safety/prod-denylist.txt` except the exact literals in `safety/reviewed-exceptions.txt`; no Syteline/Infor, tfhcore or Avalara variable is non-empty (in `.env` or your shell); DB host is the local `postgres` container; APP_ENV is not production; every `proxy/allowlist.txt` entry is non-prod; no Spreedly access secret / gateway token in compose (both modes); no Spreedly environment key when offline. Preflight also GENERATES the effective proxy filter `.state/egress/allowlist.txt` (gitignored): empty when offline or on any refusal (fail closed), otherwise `proxy/allowlist.txt` plus the derived Sticky API host. Both modes: every pattern in the deny list, allow-lists and non-prod list must be `^...$` anchored with escaped dots (`tests/test-patterns.sh`). |
 | No direct internet | `docker-compose.yml` network `internal` (`internal: true`) | App containers cannot reach the internet at all. |
 | Read-only list | `proxy/readonly-allowlist.txt` | Builder.io content API (`cdn.builder.io`) only, approved by Michael 2026-11-19. Preflight refuses any entry not in its fixed `READONLY_APPROVED` set (both modes) or on the prod deny-list; Node apps refuse non-GET to it (scope below). Only public Builder keys are configured; preflight refuses any Builder private key. |
 | Egress allow-list | `proxy/` (tinyproxy, `FilterDefaultDeny Yes`) | The only way out. Reads only the preflight-generated `.state/egress/allowlist.txt` (mounted read-only) plus `proxy/readonly-allowlist.txt`; `make up` recreates the proxy when it changes. Empty in offline mode (denies everything). With `EXTERNALS=real` it allows `limelightcrm.com`, the derived Sticky API host and `api.dev.trulyfree.com`. Everything else, including Klaviyo, AWS, and all prod hosts, is denied. |
@@ -60,9 +65,11 @@ Never copy `STICKY_*` / `TF_COMPOSITION_*` values into `.env` while `EXTERNALS=o
 
 ## Never add to `proxy/allowlist.txt`, `safety/nonprod-hosts.txt` or `safety/reviewed-exceptions.txt`
 Any production host (see `safety/prod-denylist.txt`; it denies every `sticky.io` / `limelightcrm.com` / `trulyfree.com`
-host, including the prod TF API), Klaviyo, AWS/S3, Syteline/Infor, tfhcore, Avalara, Sentry, CloudWatch.
+host, including the prod TF API, and every `spreedly.com` host), Klaviyo, AWS/S3, Syteline/Infor, tfhcore, Avalara,
+Sentry, CloudWatch.
 `safety/reviewed-exceptions.txt` holds exact literal hosts only (`^host$`, no wildcards; each must also be on
-`nonprod-hosts.txt`) that may pass the deny list: today `limelightcrm.com` and `api.dev.trulyfree.com`. Any other deny
+`nonprod-hosts.txt`) that may pass the deny list: today `limelightcrm.com`, `api.dev.trulyfree.com` and
+`core.spreedly.com` (M9; the host serves sandbox and prod alike, the sandbox environment key decides). Any other deny
 match is still refused. Changes to these files need Michael's review.
 
 ## If something looks wrong
@@ -77,6 +84,9 @@ not clean up on your own, report to Michael with the run directory (`.state/runs
 - Compose credentials have no defaults; `make bootstrap` generates missing ones into `.env` (never printed).
 - `make check-secrets` runs gitleaks (full history + staged) when installed; CI runs it on every PR.
 - `make health` proves egress. `EXTERNALS=real`: 200 for `cdn.builder.io`, `limelightcrm.com`, the derived Sticky API
-  host (printed masked) and `api.dev.trulyfree.com`; 403 for everything else (prod TF API, `trulyfree.com`,
-  `www`/`api.limelightcrm.com`, `sticky.io`, Klaviyo, Mailgun, Avalara, tfhcore, trulyfreehome.com, builder.io root).
-  Offline: the Sticky/TF hosts must be 403 too. `make test` runs the offline shell tests in `tests/`.
+  host (printed masked), `api.dev.trulyfree.com` and `core.spreedly.com`; 403 for everything else (prod TF API,
+  `trulyfree.com`, `www`/`api.limelightcrm.com`, `sticky.io`, `spreedly.com`/`www`/`docs.spreedly.com`, Klaviyo,
+  Mailgun, Avalara, tfhcore, trulyfreehome.com, builder.io root). Offline: the Sticky/TF/Spreedly hosts must be 403 too.
+- Browsers are NOT behind the proxy: the Playwright browser loads the Spreedly iframe (`core.spreedly.com`) directly.
+  The suite aborts only its tracker block list in the browser (tfh-automation `LOCAL_BLOCKED_HOSTS`); with the key
+  unset (offline) the apps never load Spreedly at all. `make test` runs the offline shell tests in `tests/`.
