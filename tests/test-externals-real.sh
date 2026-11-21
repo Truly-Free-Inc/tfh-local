@@ -28,12 +28,13 @@ expect_true "real preflight passes (rc=$rc)" [ $rc -eq 0 ]; [ $rc -eq 0 ] || pri
 expect_true "filter allows limelightcrm.com"          grep -qxF '^limelightcrm\.com$' <(entries)
 expect_true "filter allows api.dev.trulyfree.com"     grep -qxF '^api\.dev\.trulyfree\.com$' <(entries)
 expect_true "filter allows the derived Sticky API host" grep -qxF '^dummyappkey\.limelightcrm\.com$' <(entries)
-expect_true "filter has exactly 3 entries" [ "$(entries | wc -l | tr -d ' ')" = 3 ]
+expect_true "filter allows core.spreedly.com (M9)"     grep -qxF '^core\.spreedly\.com$' <(entries)
+expect_true "filter has exactly 4 entries" [ "$(entries | wc -l | tr -d ' ')" = 4 ]
 expect_false "preflight never prints the app key" grep -q dummyappkey <<<"$out"
 allowed() { printf '%s\n' "$1" | grep -Eiq -f <(entries); }
 for h in www.limelightcrm.com api.limelightcrm.com other.limelightcrm.com sticky.io api.sticky.io api.trulyfree.com \
          trulyfree.com www.trulyfree.com x.api.dev.trulyfree.com a.klaviyo.com api.mailgun.net s3.amazonaws.com \
-         rest.avatax.com www.trulyfreehome.com tfhcore.example; do
+         rest.avatax.com www.trulyfreehome.com tfhcore.example spreedly.com www.spreedly.com x.core.spreedly.com; do
   expect_false "filter does not allow $h" allowed "$h"
 done
 
@@ -52,6 +53,19 @@ real_env; setv STICKY_APP_KEY 'dummyappkey.evil';                       refuses 
 real_env; setv STICKY_APP_KEY '';                                       refuses "app key missing" "STICKY_APP_KEY is not set"
 real_env; setv TF_COMPOSITION_API_TOKEN '';                             refuses "TF token missing" "TF_COMPOSITION_API_TOKEN is not set"
 real_env; setv TF_COMPOSITION_API_BASE_URL http://api.dev.trulyfree.com; refuses "TF over http" "must be https"
+
+echo "Spreedly (M9): sandbox environment key only with EXTERNALS=real; only core.spreedly.com"
+real_env; setv NEXT_PUBLIC_SPREEDLY_ENVIRONMENT_KEY_TF dummy-spreedly-env-key; pf
+expect_true "real + Spreedly key passes (rc=$rc)" [ $rc -eq 0 ]
+expect_false "Spreedly key not printed" grep -q dummy-spreedly-env-key <<<"$out"
+dummy_env "$SB"; setv NEXT_PUBLIC_SPREEDLY_ENVIRONMENT_KEY_TF dummy-spreedly-env-key; pf
+expect_true "offline + Spreedly key -> exit 1 (rc=$rc)" [ $rc -eq 1 ]
+expect_true "offline + Spreedly key -> message" grep -q 'is set while EXTERNALS=offline' <<<"$out"
+expect_true "offline + Spreedly key -> filter empty" [ -z "$(entries)" ]
+cp "$SB/proxy/allowlist.txt" "$SB/allow.bak"
+real_env; echo '^api\.spreedly\.com$' >> "$SB/proxy/allowlist.txt"; refuses "other spreedly.com host" "matches the prod deny-list"
+cp "$SB/allow.bak" "$SB/proxy/allowlist.txt"
+expect_true "preflight refuses a Spreedly access secret in compose" grep -q 'SPREEDLY_(ACCESS_SECRET|GATEWAY_TOKEN' "$SB/scripts/preflight.sh"
 
 echo "reviewed-exceptions.txt: literal hosts on the non-prod list only"
 cp "$SB/safety/reviewed-exceptions.txt" "$SB/exc.bak"
